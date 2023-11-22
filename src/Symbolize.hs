@@ -21,6 +21,8 @@ import Data.ByteString.Short (ShortByteString)
 import Data.TTC (Textual)
 import qualified Data.TTC as TTC
 import Control.DeepSeq (NFData)
+import GHC.Read (Read(..))
+import Text.Read (Lexeme(Ident), parens, prec, lexP, readListPrecDefault)
 
 -- | A string-like type with O(1) equality and comparison. 
 --
@@ -46,12 +48,20 @@ data Symbol = Symbol {-# UNPACK #-} !Word
   deriving (Eq, Hashable, Generic, NFData)
 
 instance Show Symbol where
-  show symbol = "Symbolize.intern \"" <> unintern symbol <> "\""
+  showsPrec p symbol = 
+    showParen (p > 10) $
+      showString "Symbolize.intern " . shows (unintern @String symbol)
 
 instance Read Symbol where
-  readsPrec _ str =
-    let sym = str & intern
-     in [(sym, "")]
+  -- readsPrec _ str =
+  --   let sym = str & intern
+  --    in [(sym, "")]
+  readPrec = parens $ prec 10 $ do
+    Ident "Symbolize.intern" <- lexP
+    symbolString <- readPrec
+    return (intern @ShortByteString symbolString)
+
+  readListPrec = readListPrecDefault
 
 instance IsString Symbol where
   fromString = intern
