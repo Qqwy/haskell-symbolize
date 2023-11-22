@@ -26,15 +26,29 @@ source-repository head
 library
   exposed-modules:
       Lib
+      Symbolize
   other-modules:
       Paths_symbolize
   autogen-modules:
       Paths_symbolize
   hs-source-dirs:
       src
+  default-extensions:
+      BangPatterns
+      OverloadedStrings
+      DeriveGeneric
+      LambdaCase
+      DeriveAnyClass
+      TypeApplications
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       base >=4.7 && <5
+    , bytestring
+    , containers
+    , deepseq
+    , hashable
+    , ttc
+    , unordered-containers
   default-language: Haskell2010
 
 executable symbolize-exe
@@ -45,10 +59,23 @@ executable symbolize-exe
       Paths_symbolize
   hs-source-dirs:
       app
+  default-extensions:
+      BangPatterns
+      OverloadedStrings
+      DeriveGeneric
+      LambdaCase
+      DeriveAnyClass
+      TypeApplications
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring
+    , containers
+    , deepseq
+    , hashable
     , symbolize
+    , ttc
+    , unordered-containers
   default-language: Haskell2010
 
 test-suite symbolize-test
@@ -60,8 +87,21 @@ test-suite symbolize-test
       Paths_symbolize
   hs-source-dirs:
       test
+  default-extensions:
+      BangPatterns
+      OverloadedStrings
+      DeriveGeneric
+      LambdaCase
+      DeriveAnyClass
+      TypeApplications
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring
+    , containers
+    , deepseq
+    , hashable
     , symbolize
+    , ttc
+    , unordered-containers
   default-language: Haskell2010

@@ -21,6 +21,12 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
+- bytestring
+- containers
+- hashable
+- unordered-containers
+- ttc
+- deepseq
 
 ghc-options:
 - -Wall
@@ -57,3 +63,11 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - symbolize
+
+default-extensions:
+- BangPatterns
+- OverloadedStrings
+- DeriveGeneric
+- LambdaCase
+- DeriveAnyClass
+- TypeApplications
