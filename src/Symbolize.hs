@@ -54,7 +54,7 @@ import Symbolize.Textual (Textual (..))
 --
 -- This is very useful if you're frequently comparing strings
 -- and the same strings might come up many times.
--- It also makes Symbol a great candidate for a key in a `Data.Map` or `HashMap`.
+-- It also makes Symbol a great candidate for a key in a `HashMap` or `Data.HashSet`. (Hashing them is a no-op!)
 --
 -- The symbol table is implemented using weak pointers,
 -- which means that unused symbols will be garbage collected.
