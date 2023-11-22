@@ -1,6 +1,6 @@
 -- | Implementation of a global Symbol Table, with garbage collection.
--- 
--- Symbols, also known as Atoms or Interned Strings, are a common technique 
+--
+-- Symbols, also known as Atoms or Interned Strings, are a common technique
 -- to reduce memory usage and improve performance when using many small strings.
 --
 -- By storing a single copy of each encountered string in a global table and giving out indexes to that table,
@@ -10,22 +10,25 @@
 --
 -- - Garbage collection: Symbols which are no longer used are automatically cleaned up.
 -- - `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
--- - Support for any `Textual` type, including `String`, (strict and lazy) `Text`, (strict and lazy) `ByteString` etc.
+-- - Support for any `Symbolizable` type, including `String`, (strict and lazy) `Text`, (strict and lazy) `ByteString` etc.
 -- - Thread-safe.
 -- - Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
 module Symbolize
-  ( someFunc,
+  ( -- * Symbol
     Symbol,
     intern,
     unintern,
     lookup,
+    Symbolizable (..),
+
+    -- * Introspection & Metrics
+    GlobalSymbolTable,
     globalSymbolTable,
     globalSymbolTableSize,
   )
 where
 
 import Control.DeepSeq (NFData)
-import Data.ByteString.Short (ShortByteString)
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
@@ -33,8 +36,7 @@ import Data.Hashable (Hashable)
 import Data.IORef (IORef)
 import qualified Data.IORef as IORef
 import Data.String (IsString (..))
-import Data.TTC (Textual)
-import qualified Data.TTC as TTC
+import Data.Text.Short (ShortText)
 import GHC.Generics (Generic)
 import GHC.IO (unsafePerformIO)
 import GHC.Read (Read (..))
@@ -42,15 +44,13 @@ import System.Mem.Weak (Weak)
 import qualified System.Mem.Weak as Weak
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import Prelude hiding (lookup)
-
-someFunc :: IO ()
-someFunc = putStrLn "someFunc"
+import Symbolize.Symbolizable (Symbolizable (..))
 
 -- | A string-like type with O(1) equality and comparison.
 --
--- A Symbol represents a string (any `Textual`, so String, Text, ByteString etc.)
--- However, it only stores an (unpacked) `Word`, an index into a global table in which the actual string value is stored.
--- This makes equality checks very fast.
+-- A Symbol represents a string (any `Symbolizable`, so String, Text, ByteString etc.)
+-- However, it only stores an (unpacked) `Word`, used as index into a global table in which the actual string value is stored.
+-- Thus equality checks are constant-time, and its memory footprint is very low.
 --
 -- This is very useful if you're frequently comparing strings
 -- and the same strings might come up many times.
@@ -63,7 +63,7 @@ someFunc = putStrLn "someFunc"
 -- Symbols are considered 'the same' regardless of whether they originate
 -- from a `String`, (lazy or strict, normal or short) `Text`, (lazy or strict, normal or short) `ByteString` etc.
 -- Note that if you're using `ByteString`, it is expected that it contains a valid UTF-8 encoded value beforehand.
--- This is not checked by this library. See `Textual` for more information.
+-- This is not checked by this library. See `Symbolizable` for more information.
 --
 -- Symbolize supports up to 2^64 symbols existing at the same type.
 -- Your system will probably run out of memory before you reach that point.
@@ -82,7 +82,7 @@ instance Read Symbol where
   readPrec = parens $ prec 10 $ do
     Ident "Lib.intern" <- lexP
     symbolString <- readPrec
-    return (intern @ShortByteString symbolString)
+    return (intern @ShortText symbolString)
 
   readListPrec = readListPrecDefault
 
@@ -92,14 +92,14 @@ instance IsString Symbol where
 -- | Symbols are ordered by their `ShortByteString` representation.
 -- This takes O(n) time, as they are compared byte-by-byte.
 instance Ord Symbol where
-  compare a b = compare (unintern @ShortByteString a) (unintern @ShortByteString b)
+  compare a b = compare (unintern @ShortText a) (unintern @ShortText b)
 
 -- | The global Symbol Table, containing a bidirectional mapping between each symbol's textual representation and its Word index.
 --
 -- You cannot manipulate the table itself directly,
--- but you can use `globalSymbolTable'`, `globalSymbolTable'Size` and its `Show` instance for introspection.
+-- but you can use `globalSymbolTable'` to get a handle to it and use its `Show` instance for introspection.
 --
--- `globalSymbolTable'Size` can similarly be used to get the current size of the table, also for introspective purposes.
+-- `globalSymbolTableSize` can similarly be used to get the current size of the table.
 data GlobalSymbolTable = GlobalSymbolTable
   { next :: !(IORef Word),
     mappings :: !(IORef SymbolTableMappings)
@@ -122,8 +122,8 @@ instance Show GlobalSymbolTable where
           <> " }"
 
 data SymbolTableMappings = SymbolTableMappings
-  { textToSymbols :: !(HashMap ShortByteString (Weak Symbol)),
-    symbolsToText :: !(HashMap Word ShortByteString)
+  { textToSymbols :: !(HashMap ShortText (Weak Symbol)),
+    symbolsToText :: !(HashMap Word ShortText)
   }
 
 -- | Unintern a symbol, returning its textual value.
@@ -132,7 +132,7 @@ data SymbolTableMappings = SymbolTableMappings
 -- Afterwards, the textual value is converted to the desired type `s`. This is a no-op if `s` is `ShortByteString`.
 --
 -- Runs concurrently with any other operation on the symbol table, without any atomic memory barriers.
-unintern :: (Textual s) => Symbol -> s
+unintern :: (Symbolizable s) => Symbol -> s
 unintern (Symbol idx) =
   let !mappingsRef = mappings globalSymbolTable'
       !mappings' = unsafePerformIO $ IORef.readIORef mappingsRef
@@ -140,7 +140,7 @@ unintern (Symbol idx) =
    in mappings'
         & symbolsToText
         & HashMap.lookup idx
-        & maybe (error "Symbol not found. This should never happen") TTC.convert
+        & maybe (error "Symbol not found. This should never happen") fromShortText
 
 -- | Looks up a symbol in the global symbol table.
 --
@@ -149,9 +149,9 @@ unintern (Symbol idx) =
 -- Takes O(log16 n) time, where n is the number of symbols currently in the table.
 --
 -- Runs concurrently with any other operation on the symbol table, without any atomic memory barriers.
-lookup :: (Textual s) => s -> Maybe Symbol
+lookup :: (Symbolizable s) => s -> Maybe Symbol
 lookup text =
-  let !text' = TTC.convert text
+  let !text' = toShortText text
       !mappingsRef = mappings globalSymbolTable'
       !mappings' = unsafePerformIO $ IORef.readIORef mappingsRef
       {-# NOINLINE mappings' #-}
@@ -166,15 +166,15 @@ lookup text =
 
 -- | Intern a string-like value.
 --
--- It is expected that `s` is valid UTF-8. (Which is not checked in the case of `ByteString`, c.f. `Textual`)
+-- It is expected that `s` is valid UTF-8. (Which is not checked in the case of `ByteString`, c.f. `Symbolizable`)
 --
 -- First converts `s` to a `ShortByteString` (if it isn't already one).
 -- Then, takes O(log16 n) time to look up the matching symbol and insert it if it did not exist yet (where n is the number of symbols currently in the table).
 --
 -- Any concurrent calls to (the critical section in) `intern` are synchronized.
-intern :: (Textual s) => s -> Symbol
+intern :: (Symbolizable s) => s -> Symbol
 intern text =
-  let !text' = TTC.convert text
+  let !text' = toShortText text
    in lookupOrInsert text'
   where
     lookupOrInsert text' =
@@ -194,7 +194,6 @@ intern text =
               textToSymbols = HashMap.insert text' weakSymbol textToSymbols
             }
         pure (next', symbol)
-
 
 -- | Returns a handle to the global symbol table. (Only) useful for introspection or debugging.
 globalSymbolTable :: IO GlobalSymbolTable

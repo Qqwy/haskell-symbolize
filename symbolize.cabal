@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Symbolize
+      Symbolize.Symbolizable
   other-modules:
       Paths_symbolize
   autogen-modules:
@@ -44,10 +45,10 @@ library
   build-depends:
       base >=4.7 && <5
     , bytestring
-    , containers
     , deepseq
     , hashable
-    , ttc
+    , text
+    , text-short
     , unordered-containers
   default-language: Haskell2010
 
@@ -71,11 +72,11 @@ executable symbolize-exe
   build-depends:
       base >=4.7 && <5
     , bytestring
-    , containers
     , deepseq
     , hashable
     , symbolize
-    , ttc
+    , text
+    , text-short
     , unordered-containers
   default-language: Haskell2010
 
@@ -100,10 +101,10 @@ test-suite symbolize-test
   build-depends:
       base >=4.7 && <5
     , bytestring
-    , containers
     , deepseq
     , hashable
     , symbolize
-    , ttc
+    , text
+    , text-short
     , unordered-containers
   default-language: Haskell2010
