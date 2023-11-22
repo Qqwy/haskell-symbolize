@@ -87,6 +87,7 @@ intern text =
             MVar.putMVar globalSymbolTable' table'
             pure symbol
   where
+    lookupWeak :: Maybe (Weak Symbol) -> IO (Maybe Symbol)
     lookupWeak Nothing = pure Nothing
     lookupWeak (Just val) = Weak.deRefWeak val
 

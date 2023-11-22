@@ -71,3 +71,4 @@ default-extensions:
 - LambdaCase
 - DeriveAnyClass
 - TypeApplications
+- NamedFieldPuns
