@@ -2,6 +2,17 @@
 -- 
 -- Symbols, also known as Atoms or Interned Strings, are a common technique 
 -- to reduce memory usage and improve performance when using many small strings.
+--
+-- By storing a single copy of each encountered string in a global table and giving out indexes to that table,
+-- it is possible to compare strings for equality in constant time, instead of linear (in string size) time.
+--
+-- The main advantages of Symbolize over existing symbol table implementations are:
+--
+-- - Garbage collection: Symbols which are no longer used are automatically cleaned up.
+-- - `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
+-- - Support for any `Textual` type, including `String`, (strict and lazy) `Text`, (strict and lazy) `ByteString` etc.
+-- - Thread-safe.
+-- - Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
 module Symbolize
   ( someFunc,
     Symbol,
@@ -116,6 +127,11 @@ data SymbolTableMappings = SymbolTableMappings
   }
 
 -- | Unintern a symbol, returning its textual value.
+-- Takes O(log16 n) time to look up the matching textual value, where n is the number of symbols currently in the table.
+--
+-- Afterwards, the textual value is converted to the desired type `s`. This is a no-op if `s` is `ShortByteString`.
+--
+-- Runs concurrently with any other operation on the symbol table, without any atomic memory barriers.
 unintern :: (Textual s) => Symbol -> s
 unintern (Symbol idx) =
   let !mappingsRef = mappings globalSymbolTable'
@@ -129,6 +145,10 @@ unintern (Symbol idx) =
 -- | Looks up a symbol in the global symbol table.
 --
 -- Returns `Nothing` if no such symbol currently exists.
+--
+-- Takes O(log16 n) time, where n is the number of symbols currently in the table.
+--
+-- Runs concurrently with any other operation on the symbol table, without any atomic memory barriers.
 lookup :: (Textual s) => s -> Maybe Symbol
 lookup text =
   let !text' = TTC.convert text
@@ -147,6 +167,11 @@ lookup text =
 -- | Intern a string-like value.
 --
 -- It is expected that `s` is valid UTF-8. (Which is not checked in the case of `ByteString`, c.f. `Textual`)
+--
+-- First converts `s` to a `ShortByteString` (if it isn't already one).
+-- Then, takes O(log16 n) time to look up the matching symbol and insert it if it did not exist yet (where n is the number of symbols currently in the table).
+--
+-- Any concurrent calls to (the critical section in) `intern` are synchronized.
 intern :: (Textual s) => s -> Symbol
 intern text =
   let !text' = TTC.convert text
