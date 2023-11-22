@@ -26,7 +26,7 @@ source-repository head
 library
   exposed-modules:
       Symbolize
-      Symbolize.Symbolizable
+      Symbolize.Textual
   other-modules:
       Paths_symbolize
   autogen-modules:
