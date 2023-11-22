@@ -1,14 +1,26 @@
--- | Symbols AKA Atoms AKA Interned Strings, with garbage collection.
-module Symbolize (Symbol (..), GlobalSymbolTable, intern, lookup, unintern, globalSymbolTable, globalSymbolTableSize) where
+-- | Implementation of a global Symbol Table, with garbage collection.
+-- 
+-- Symbols, also known as Atoms or Interned Strings, are a common technique 
+-- to reduce memory usage and improve performance when using many small strings.
+module Symbolize
+  ( someFunc,
+    Symbol,
+    intern,
+    unintern,
+    lookup,
+    globalSymbolTable,
+    globalSymbolTableSize,
+  )
+where
 
-import Control.Concurrent.MVar (MVar)
-import qualified Control.Concurrent.MVar as MVar
 import Control.DeepSeq (NFData)
 import Data.ByteString.Short (ShortByteString)
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Hashable (Hashable)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import Data.String (IsString (..))
 import Data.TTC (Textual)
 import qualified Data.TTC as TTC
@@ -19,6 +31,9 @@ import System.Mem.Weak (Weak)
 import qualified System.Mem.Weak as Weak
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import Prelude hiding (lookup)
+
+someFunc :: IO ()
+someFunc = putStrLn "someFunc"
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -47,14 +62,14 @@ data Symbol = Symbol {-# UNPACK #-} !Word
 instance Show Symbol where
   showsPrec p symbol =
     showParen (p > 10) $
-      showString "Symbolize.intern " . shows (unintern @String symbol)
+      showString "Lib.intern " . shows (unintern @String symbol)
 
 instance Read Symbol where
   -- readsPrec _ str =
   --   let sym = str & intern
   --    in [(sym, "")]
   readPrec = parens $ prec 10 $ do
-    Ident "Symbolize.intern" <- lexP
+    Ident "Lib.intern" <- lexP
     symbolString <- readPrec
     return (intern @ShortByteString symbolString)
 
@@ -68,152 +83,121 @@ instance IsString Symbol where
 instance Ord Symbol where
   compare a b = compare (unintern @ShortByteString a) (unintern @ShortByteString b)
 
--- | Intern a string-like value.
+-- | The global Symbol Table, containing a bidirectional mapping between each symbol's textual representation and its Word index.
 --
--- It is expected that `s` is valid UTF-8. (Which is not checked in the case of `ByteString`, c.f. `Textual`)
-intern :: (Textual s) => s -> Symbol
-intern text =
-  -- Force evaluation before running atomic section:
-  let !key = TTC.convert text
-   in unsafePerformIO $ do
-        table <- MVar.takeMVar globalSymbolTable'
-        maybe_symbol <- lookupWeak $ HashMap.lookup key $ textToSymbols table
-        case maybe_symbol of
-          Just symbol -> do
-            MVar.putMVar globalSymbolTable' table
-            pure symbol
-          Nothing -> do
-            (table', symbol) <- unsafeAddSymbol table key
-            MVar.putMVar globalSymbolTable' table'
-            pure symbol
-  where
-    lookupWeak :: Maybe (Weak Symbol) -> IO (Maybe Symbol)
-    lookupWeak Nothing = pure Nothing
-    lookupWeak (Just val) = Weak.deRefWeak val
+-- You cannot manipulate the table itself directly,
+-- but you can use `globalSymbolTable'`, `globalSymbolTable'Size` and its `Show` instance for introspection.
+--
+-- `globalSymbolTable'Size` can similarly be used to get the current size of the table, also for introspective purposes.
+data GlobalSymbolTable = GlobalSymbolTable
+  { next :: !(IORef Word),
+    mappings :: !(IORef SymbolTableMappings)
+  }
+
+instance Show GlobalSymbolTable where
+  show table =
+    let !next' = unsafePerformIO $ IORef.readIORef (next table)
+        {-# NOINLINE next' #-}
+        !mappings' = unsafePerformIO $ IORef.readIORef (mappings table)
+        {-# NOINLINE mappings' #-}
+        !contents = mappings' & symbolsToText
+        !count = HashMap.size contents
+     in "GlobalSymbolTable { count = "
+          <> show count
+          <> ", next = "
+          <> show next'
+          <> ", contents = "
+          <> show (HashMap.toList contents)
+          <> " }"
+
+data SymbolTableMappings = SymbolTableMappings
+  { textToSymbols :: !(HashMap ShortByteString (Weak Symbol)),
+    symbolsToText :: !(HashMap Word ShortByteString)
+  }
+
+-- | Unintern a symbol, returning its textual value.
+unintern :: (Textual s) => Symbol -> s
+unintern (Symbol idx) =
+  let !mappingsRef = mappings globalSymbolTable'
+      !mappings' = unsafePerformIO $ IORef.readIORef mappingsRef
+      {-# NOINLINE mappings' #-}
+   in mappings'
+        & symbolsToText
+        & HashMap.lookup idx
+        & maybe (error "Symbol not found. This should never happen") TTC.convert
 
 -- | Looks up a symbol in the global symbol table.
 --
 -- Returns `Nothing` if no such symbol currently exists.
 lookup :: (Textual s) => s -> Maybe Symbol
 lookup text =
-  -- Force evaluation before running atomic section:
-  let !key = TTC.convert text
-   in globalSymbolTable'
-        & readSymbolTable
+  let !text' = TTC.convert text
+      !mappingsRef = mappings globalSymbolTable'
+      !mappings' = unsafePerformIO $ IORef.readIORef mappingsRef
+      {-# NOINLINE mappings' #-}
+   in mappings'
         & textToSymbols
-        & HashMap.lookup key
-        & \case
-          Nothing -> Nothing
-          Just weak_symbol -> unsafePerformIO (Weak.deRefWeak weak_symbol)
+        & HashMap.lookup text'
+        & lookupWeak
+  where
+    lookupWeak Nothing = Nothing
+    lookupWeak (Just weak) = unsafePerformIO $ Weak.deRefWeak weak
+    {-# NOINLINE lookupWeak #-}
 
--- | Unintern a symbol, returning its textual value.
-unintern :: (Textual s) => Symbol -> s
-unintern (Symbol idx) =
-  globalSymbolTable'
-    & readSymbolTable
-    & symbolsToText
-    & HashMap.lookup idx
-    & \case
-      Nothing -> error "Symbol not found. This should never happen."
-      Just text -> TTC.convert text
-
-data SymbolTable = SymbolTable
-  { next :: {-# UNPACK #-} !Word,
-    textToSymbols :: !(HashMap ShortByteString (Weak Symbol)),
-    symbolsToText :: !(HashMap Word ShortByteString)
-  }
-
-instance Show SymbolTable where
-  show env =
-    let count = HashMap.size (textToSymbols env)
-        contents = env & symbolsToText & HashMap.toList & fmap (\(idx, text) -> show idx <> " <-> " <> show text) & unlines
-     in "SymbolTable { next = " <> show (next env) <> ", count = " <> show count <> ", contents = [\n" <> contents <> "] }"
-
--- | The global Symbol Table, containing a bidirectional mapping between each symbol's textual representation and its Word index.
+-- | Intern a string-like value.
 --
--- You cannot manipulate the table itself directly,
--- but you can use `globalSymbolTable`, `globalSymbolTableSize` and its `Show` instance for introspection.
---
--- `globalSymbolTableSize` can similarly be used to get the current size of the table, also for introspective purposes.
-newtype GlobalSymbolTable = GlobalSymbolTable (MVar SymbolTable)
+-- It is expected that `s` is valid UTF-8. (Which is not checked in the case of `ByteString`, c.f. `Textual`)
+intern :: (Textual s) => s -> Symbol
+intern text =
+  let !text' = TTC.convert text
+   in lookupOrInsert text'
+  where
+    lookupOrInsert text' =
+      unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
+        case lookup text of
+          Just symbol -> (next, symbol)
+          Nothing -> insert text' next
+    {-# NOINLINE lookupOrInsert #-}
+    insert text' next =
+      unsafePerformIO $ do
+        let !symbol = Symbol next
+        weakSymbol <- Weak.mkWeakPtr symbol Nothing
+        let !next' = next + 1
+        IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
+          SymbolTableMappings
+            { symbolsToText = HashMap.insert next text' symbolsToText,
+              textToSymbols = HashMap.insert text' weakSymbol textToSymbols
+            }
+        pure (next', symbol)
 
--- | Prints a representation of the global symbol table,
--- which includes the full mapping of symbols currently inside.
---
--- **Only use this for introspection**! The format of the returned string is subject to change.
-instance Show GlobalSymbolTable where
-  show (GlobalSymbolTable mutableTable) =
-    mutableTable
-      & readSymbolTable
-      & show
 
 -- | Returns a handle to the global symbol table. (Only) useful for introspection or debugging.
 globalSymbolTable :: IO GlobalSymbolTable
-globalSymbolTable = pure $ GlobalSymbolTable globalSymbolTable'
+globalSymbolTable =
+  globalSymbolTable'
+    -- re-introduce the IO bound which we unsafePerformIO'ed:
+    & pure
+
+globalSymbolTable' :: GlobalSymbolTable
+globalSymbolTable' =
+  let !next = 0
+      !mappings = SymbolTableMappings HashMap.empty HashMap.empty
+      construct =
+        unsafePerformIO $ do
+          nextRef <- IORef.newIORef next
+          mappingsRef <- IORef.newIORef mappings
+          return (GlobalSymbolTable nextRef mappingsRef)
+      {-# NOINLINE construct #-}
+   in construct
 
 -- | Returns the current size of the global symbol table. Useful for introspection or metrics.
 globalSymbolTableSize :: IO Word
-globalSymbolTableSize =
-  globalSymbolTable'
-    & readSymbolTable
-    & symbolsToText
-    & HashMap.size
-    & fromIntegral
-    & pure
-
-globalSymbolTable' :: MVar SymbolTable
-globalSymbolTable' = unsafePerformIO $ MVar.newMVar newSymbolTable
-{-# NOINLINE globalSymbolTable' #-}
-
-readSymbolTable :: MVar SymbolTable -> SymbolTable
-readSymbolTable mutableTable =
-  mutableTable
-    & MVar.readMVar
-    & unsafePerformIO
-{-# NOINLINE readSymbolTable #-}
-
-newSymbolTable :: SymbolTable
-newSymbolTable =
-  SymbolTable
-    { next = 0,
-      textToSymbols = HashMap.empty,
-      symbolsToText = HashMap.empty
-    }
-
-unsafeAddSymbol :: SymbolTable -> ShortByteString -> IO (SymbolTable, Symbol)
-unsafeAddSymbol table text = do
-  let idx = nextEmptyIndex table
-  let symbol = Symbol idx
-  weakSymbol <- Weak.mkWeakPtr symbol (Just (finalizer globalSymbolTable' idx))
-  let next' = idx + 1 -- <- Wrapping on overflow is intentional
-  let textToSymbols' =
-        table
-          & textToSymbols
-          & HashMap.insert text weakSymbol
-  let symbolsToText' =
-        table
+globalSymbolTableSize = do
+  table <- globalSymbolTable
+  mappings <- IORef.readIORef (mappings table)
+  let size =
+        mappings
           & symbolsToText
-          & HashMap.insert idx text
-  pure (SymbolTable {next = next', textToSymbols = textToSymbols', symbolsToText = symbolsToText'}, symbol)
-{-# NOINLINE unsafeAddSymbol #-}
-
-nextEmptyIndex :: SymbolTable -> Word
-nextEmptyIndex env = go (next env)
-  where
-    go idx = case HashMap.lookup idx (symbolsToText env) of
-      Nothing -> idx
-      _ -> go (idx + 1) -- <- Wrapping on overflow is intentional
-
-finalizer :: MVar SymbolTable -> Word -> IO ()
-finalizer mvar idx =
-  MVar.modifyMVar_ mvar $ \env' ->
-    pure (removeSymbol idx env')
-  where
-    removeSymbol :: Word -> SymbolTable -> SymbolTable
-    removeSymbol index env = case HashMap.lookup idx (symbolsToText env) of
-      Nothing -> env
-      Just text ->
-        env
-          { textToSymbols = HashMap.delete text (textToSymbols env),
-            symbolsToText = HashMap.delete index (symbolsToText env)
-          }
+          & HashMap.size
+          & fromIntegral
+  pure size
