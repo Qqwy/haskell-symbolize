@@ -2,21 +2,14 @@ on: [push]
 name: test
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        ghc: ['9.4.7']
-        # ghc: ['9.8.1', '9.6.3', '9.4.8', '9.2.8', '8.10.7']
-        # cabal: ['2.4.1.0', '3.0.0.0']
-        os: [ubuntu-latest, macOS-latest, windows-latest]
-    name: Haskell GHC ${{ matrix.ghc }} stack test
+    name: Stack test
+    runs-on: ubuntu-latest # or macOS-latest, or windows-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: Setup Haskell
-        uses: actions/setup-haskell@v1.1
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/setup@v2
         with:
-          ghc-version: ${{ matrix.ghc }}
-          # cabal-version: ${{ matrix.cabal }}
+          ghc-version: '9.8.1' # Exact version of ghc to use
+          # cabal-version: 'latest'. Omitted, but defaults to 'latest'
           enable-stack: true
           stack-version: 'latest'
       - run: stack test
