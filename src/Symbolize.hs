@@ -71,14 +71,14 @@ data Symbol = Symbol {-# UNPACK #-} !Word
 instance Show Symbol where
   showsPrec p symbol =
     showParen (p > 10) $
-      showString "Lib.intern " . shows (unintern @String symbol)
+      showString "Symbolize.intern " . shows (unintern @String symbol)
 
 instance Read Symbol where
   -- readsPrec _ str =
   --   let sym = str & intern
   --    in [(sym, "")]
   readPrec = parens $ prec 10 $ do
-    Ident "Lib.intern" <- lexP
+    Ident "Symbolize.intern" <- lexP
     symbolString <- readPrec
     return (intern @ShortText symbolString)
 
@@ -206,15 +206,23 @@ intern text =
       -- SAFETY: Courtesy of atomicModifyIORef', the blackhole check is not needed as we are guaranteed to be the only thread running this code at one time.
       -- Also, since we depend on `next` we cannot flout out of the `atomicModifyIORef` lambda.
       System.IO.Unsafe.unsafeDupablePerformIO $ do
-        let !symbol = Symbol next
-        weakSymbol <- Weak.mkWeakPtr symbol Nothing
-        let !next' = next + 1
+        let !idx = nextEmptyIndex next (System.IO.Unsafe.unsafeDupablePerformIO $ IORef.readIORef (mappings globalSymbolTable'))
+        let !symbol = Symbol idx
+        weakSymbol <- Weak.mkWeakPtr symbol (Just (finalizer idx))
+        let !nextFree = idx + 1
         IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
           SymbolTableMappings
-            { symbolsToText = HashMap.insert next text' symbolsToText,
+            { symbolsToText = HashMap.insert idx text' symbolsToText,
               textToSymbols = HashMap.insert text' weakSymbol textToSymbols
             }
-        pure (next', symbol)
+        pure (nextFree, symbol)
+
+nextEmptyIndex :: Word -> SymbolTableMappings -> Word
+nextEmptyIndex starting (SymbolTableMappings {symbolsToText, ..}) = go starting
+  where
+    go idx = case HashMap.lookup idx symbolsToText of
+      Nothing -> idx
+      _ -> go (idx + 1) -- <- Wrapping on overflow is intentional
 
 -- | Returns a handle to the global symbol table. (Only) useful for introspection or debugging.
 globalSymbolTable :: IO GlobalSymbolTable
@@ -243,3 +251,18 @@ globalSymbolTableSize = do
           & HashMap.size
           & fromIntegral
   pure size
+
+
+finalizer :: Word -> IO ()
+finalizer idx =
+  IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
+    System.IO.Unsafe.unsafeDupablePerformIO $ do 
+      IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
+        case HashMap.lookup idx symbolsToText of
+          Nothing -> SymbolTableMappings {symbolsToText, textToSymbols}
+          Just text ->
+            SymbolTableMappings
+              { symbolsToText = HashMap.delete idx symbolsToText,
+                textToSymbols = HashMap.delete text textToSymbols
+              }
+      pure (next, ())

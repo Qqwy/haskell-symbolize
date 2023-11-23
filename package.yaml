@@ -72,3 +72,4 @@ default-extensions:
 - DeriveAnyClass
 - TypeApplications
 - NamedFieldPuns
+- RecordWildCards
