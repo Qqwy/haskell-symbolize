@@ -13,14 +13,30 @@
 -- - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
 -- - Thread-safe.
 -- - Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
+-- - Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
+--
+-- ## Basic usage
+--
+-- This module is intended to be imported qualified, e.g.
+--
+-- ```
+-- import Symbolize (Symbol)
+-- import qualified Symbolize
+-- ```
+-- 
+--
+-- >>> hello = Symbolize.intern "hello"
+-- >>> hello2 = Symbolize.intern "hello"
+-- >>> hello == hello2 -- Runs in O(1) time
+-- True
+
 module Symbolize
   ( -- * Symbol
     Symbol,
     intern,
     unintern,
     lookup,
-    Textual (..),
-
+    Textual(..),
     -- * Introspection & Metrics
     GlobalSymbolTable,
     globalSymbolTable,

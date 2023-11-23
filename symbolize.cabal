@@ -82,15 +82,15 @@ executable symbolize-exe
     , unordered-containers
   default-language: Haskell2010
 
-test-suite symbolize-test
+test-suite symbolize-doctest
   type: exitcode-stdio-1.0
-  main-is: Spec.hs
+  main-is: DocTest.hs
   other-modules:
       Paths_symbolize
   autogen-modules:
       Paths_symbolize
   hs-source-dirs:
-      test
+      test/doctest
   default-extensions:
       BangPatterns
       OverloadedStrings
@@ -105,8 +105,46 @@ test-suite symbolize-test
       base >=4.7 && <5
     , bytestring
     , deepseq
+    , doctest-parallel
     , hashable
     , symbolize
+    , text
+    , text-short
+    , unordered-containers
+  default-language: Haskell2010
+
+test-suite symbolize-test
+  type: exitcode-stdio-1.0
+  main-is: Suite.hs
+  other-modules:
+      Paths_symbolize
+  autogen-modules:
+      Paths_symbolize
+  hs-source-dirs:
+      test/suite
+  default-extensions:
+      BangPatterns
+      OverloadedStrings
+      DeriveGeneric
+      LambdaCase
+      DeriveAnyClass
+      TypeApplications
+      NamedFieldPuns
+      RecordWildCards
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-tool-depends:
+      tasty-discover:tasty-discover
+  build-depends:
+      base >=4.7 && <5
+    , bytestring
+    , deepseq
+    , hashable
+    , hedgehog
+    , symbolize
+    , tasty
+    , tasty-golden
+    , tasty-hedgehog
+    , tasty-hunit
     , text
     , text-short
     , unordered-containers

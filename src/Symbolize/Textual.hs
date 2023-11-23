@@ -1,5 +1,5 @@
--- <- Needed to support `String` instance :-(
 {-# LANGUAGE FlexibleInstances #-}
+-- NOTE: FlexibleInstances is needed to support `String` instance :-(
 
 module Symbolize.Textual (Textual (..)) where
 
