@@ -120,10 +120,9 @@ import Symbolize.Textual (Textual (..))
 import qualified System.IO.Unsafe
 import System.Mem.Weak (Weak)
 import qualified System.Mem.Weak as Weak
-import Text.Read (Lexeme (Ident, Punc), step, lexP, parens, prec, readListPrecDefault)
+import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import qualified Text.Read
 import Prelude hiding (lookup)
-import qualified Debug.Trace
 
 -- | A string-like type with O(1) equality and comparison.
 --
