@@ -39,12 +39,12 @@ import Data.String (IsString (..))
 import Data.Text.Short (ShortText)
 import GHC.Generics (Generic)
 import GHC.Read (Read (..))
+import Symbolize.Textual (Textual (..))
+import qualified System.IO.Unsafe
 import System.Mem.Weak (Weak)
 import qualified System.Mem.Weak as Weak
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import Prelude hiding (lookup)
-import Symbolize.Textual (Textual (..))
-import qualified System.IO.Unsafe
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -100,7 +100,7 @@ instance Ord Symbol where
   compare a b = compare (unintern @ShortText a) (unintern @ShortText b)
   {-# INLINE compare #-}
 
--- | 
+-- |
 -- Hashing a `Symbol` is very fast:
 --
 -- `hash` is a no-op and results in zero collissions, as `Symbol`'s index is unique and can be interpreted as a hash as-is.
@@ -206,19 +206,22 @@ intern text =
       -- SAFETY: Courtesy of atomicModifyIORef', the blackhole check is not needed as we are guaranteed to be the only thread running this code at one time.
       -- Also, since we depend on `next` we cannot flout out of the `atomicModifyIORef` lambda.
       System.IO.Unsafe.unsafeDupablePerformIO $ do
-        let !idx = nextEmptyIndex next (System.IO.Unsafe.unsafeDupablePerformIO $ IORef.readIORef (mappings globalSymbolTable'))
+        SymbolTableMappings {symbolsToText, textToSymbols} <- IORef.readIORef (mappings globalSymbolTable')
+        let !idx = nextEmptyIndex next symbolsToText
         let !symbol = Symbol idx
         weakSymbol <- Weak.mkWeakPtr symbol (Just (finalizer idx))
+        let !mappings2 =
+              SymbolTableMappings
+                { symbolsToText = HashMap.insert idx text' symbolsToText,
+                  textToSymbols = HashMap.insert text' weakSymbol textToSymbols
+                }
+        IORef.writeIORef (mappings globalSymbolTable') mappings2
+
         let !nextFree = idx + 1
-        IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
-          SymbolTableMappings
-            { symbolsToText = HashMap.insert idx text' symbolsToText,
-              textToSymbols = HashMap.insert text' weakSymbol textToSymbols
-            }
         pure (nextFree, symbol)
 
-nextEmptyIndex :: Word -> SymbolTableMappings -> Word
-nextEmptyIndex starting (SymbolTableMappings {symbolsToText, ..}) = go starting
+nextEmptyIndex :: Word -> HashMap Word ShortText -> Word
+nextEmptyIndex starting symbolsToText = go starting
   where
     go idx = case HashMap.lookup idx symbolsToText of
       Nothing -> idx
@@ -252,11 +255,11 @@ globalSymbolTableSize = do
           & fromIntegral
   pure size
 
-
 finalizer :: Word -> IO ()
 finalizer idx =
   IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
-    System.IO.Unsafe.unsafeDupablePerformIO $ do 
+    -- SAFETY: Must not be dupable
+    System.IO.Unsafe.unsafePerformIO $ do
       IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
         case HashMap.lookup idx symbolsToText of
           Nothing -> SymbolTableMappings {symbolsToText, textToSymbols}
@@ -266,3 +269,4 @@ finalizer idx =
                 textToSymbols = HashMap.delete text textToSymbols
               }
       pure (next, ())
+{-# NOINLINE finalizer #-}
