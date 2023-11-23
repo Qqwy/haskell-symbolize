@@ -6,6 +6,20 @@ jobs:
     runs-on: ubuntu-latest # or macOS-latest, or windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.stack
+            .stack-work
+          key: ${{ runner.os }}-stack-${{ hashFiles('stack.yaml.lock', 'package.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-stack-
+      - name: Restore cached dependencies
+        uses: actions/cache/restore@v3
+        id: cache
+        with:
+            path: ~/.stack
+            key: ${{ runner.os }}-stack-${{ hashFiles('**/*.cabal') }}
       - uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.8.1' # Exact version of ghc to use
