@@ -1,23 +1,40 @@
 name:                symbolize
 version:             0.1.0.0
-github:              "githubuser/symbolize"
+github:              "Qqwy/haskell-symbolize"
 license:             BSD-3-Clause
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2023 Author name here"
+author:              "Qqwy / Marten"
+maintainer:          "qqwy@gmx.com"
+copyright:           "2023 Marten Wijnja"
 
 extra-source-files:
 - README.md
 - CHANGELOG.md
 
 # Metadata used when publishing your package
-# synopsis:            Short description of your package
-# category:            Web
+synopsis:            Efficient global Symbol Table, with Garbage Collection. 
+category:            Data, Data Structures
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/symbolize#readme>
+description: "
+  Symbols, also known as Atoms or Interned Strings, are a common technique
+  to reduce memory usage and improve performance when using many small strings.
+
+  By storing a single copy of each encountered string in a global table and giving out indexes to that table,
+  it is possible to compare strings for equality in constant time, instead of linear (in string size) time.
+
+  The main advantages of Symbolize over existing symbol table implementations are:
+
+  - Garbage collection: Symbols which are no longer used are automatically cleaned up.
+  - `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
+  - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
+  - Thread-safe.
+  - Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
+  - Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
+
+  Please see the full README on GitHub at <https://github.com/Qqwy/haskell-symbolize#readme>
+  "
 
 dependencies:
 - base >= 4.7 && < 5

@@ -32,8 +32,9 @@ To intern a string, use `intern`:
 (Symbolize.intern "hello",Symbolize.intern "world")
 
 Interning supports any `Textual` type, so you can also use `Data.Text` or `Data.ByteString` etc.:
+
 >>> import Data.Text (Text)
->>> niceCheeses = Symbolize.intern <$> (["Roquefort", "Camembert", "Brie"] :: [Text])
+>>> niceCheeses = fmap Symbolize.intern (["Roquefort", "Camembert", "Brie"] :: [Text])
 >>> niceCheeses
 [Symbolize.intern "Roquefort",Symbolize.intern "Camembert",Symbolize.intern "Brie"]
 
@@ -60,6 +61,15 @@ If you only want to check whether a string is already interned, use `lookup`:
 >>> Symbolize.lookup "hello"
 Just (Symbolize.intern "hello")
 
+Symbols make great keys for `Data.HashMap` and `Data.HashSet`.
+Hashing them is a no-op and they are guaranteed to be unique:
+
+>>> import qualified Data.Hashable as Hashable
+>>> Hashable.hash hello
+0
+>>> fmap Hashable.hash niceCheeses
+[2,3,4]
+
 For introspection, you can look at how many symbols currently exist:
 
 >>> Symbolize.globalSymbolTableSize
@@ -75,8 +85,8 @@ Unused symbols will be garbage-collected, so you don't have to worry about memor
 >>> Symbolize.globalSymbolTableSize
 5
 
-For further debugging, you can look at the Show instance of the global symbol table:
-/(Note that the exact representation of what is shown is subject to change.)/
+For deeper introspection, you can look at the Show instance of the global symbol table:
+/(Note that the exact format is subject to change.)/
 
 >>> Symbolize.globalSymbolTable
 GlobalSymbolTable { count = 5, next = 10, contents = [(0,"hello"),(1,"world"),(2,"Roquefort"),(3,"Camembert"),(4,"Brie")] }
