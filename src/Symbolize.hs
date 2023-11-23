@@ -38,13 +38,13 @@ import qualified Data.IORef as IORef
 import Data.String (IsString (..))
 import Data.Text.Short (ShortText)
 import GHC.Generics (Generic)
-import GHC.IO (unsafePerformIO)
 import GHC.Read (Read (..))
 import System.Mem.Weak (Weak)
 import qualified System.Mem.Weak as Weak
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import Prelude hiding (lookup)
 import Symbolize.Textual (Textual (..))
+import qualified System.IO.Unsafe
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -124,10 +124,10 @@ data GlobalSymbolTable = GlobalSymbolTable
 
 instance Show GlobalSymbolTable where
   show table =
-    let !next' = unsafePerformIO $ IORef.readIORef (next table)
-        {-# NOINLINE next' #-}
-        !mappings' = unsafePerformIO $ IORef.readIORef (mappings table)
-        {-# NOINLINE mappings' #-}
+    -- NOTE: We want to make sure that (roughly) the same table state is used for each of the components
+    -- which is why we use BangPatterns such that a partially-read show string will end up printing a (roughly) consistent state.
+    let !next' = System.IO.Unsafe.unsafePerformIO $ IORef.readIORef (next table)
+        !mappings' = System.IO.Unsafe.unsafePerformIO $ IORef.readIORef (mappings table)
         !contents = mappings' & symbolsToText
         !count = HashMap.size contents
      in "GlobalSymbolTable { count = "
@@ -152,7 +152,8 @@ data SymbolTableMappings = SymbolTableMappings
 unintern :: (Textual s) => Symbol -> s
 unintern (Symbol idx) =
   let !mappingsRef = mappings globalSymbolTable'
-      !mappings' = unsafePerformIO $ IORef.readIORef mappingsRef
+      -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafeDupablePerformIO here.
+      !mappings' = System.IO.Unsafe.unsafeDupablePerformIO $ IORef.readIORef mappingsRef
       {-# NOINLINE mappings' #-}
    in mappings'
         & symbolsToText
@@ -171,7 +172,8 @@ lookup :: (Textual s) => s -> Maybe Symbol
 lookup text =
   let !text' = toShortText text
       !mappingsRef = mappings globalSymbolTable'
-      !mappings' = unsafePerformIO $ IORef.readIORef mappingsRef
+      -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafeDupablePerformIO here.
+      !mappings' = System.IO.Unsafe.unsafeDupablePerformIO $ IORef.readIORef mappingsRef
       {-# NOINLINE mappings' #-}
    in mappings'
         & textToSymbols
@@ -179,7 +181,7 @@ lookup text =
         & lookupWeak
   where
     lookupWeak Nothing = Nothing
-    lookupWeak (Just weak) = unsafePerformIO $ Weak.deRefWeak weak
+    lookupWeak (Just weak) = System.IO.Unsafe.unsafePerformIO $ Weak.deRefWeak weak
     {-# NOINLINE lookupWeak #-}
 {-# INLINE lookup #-}
 
@@ -195,13 +197,15 @@ intern text =
    in lookupOrInsert text'
   where
     lookupOrInsert text' =
-      unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
+      -- SAFETY: `intern` is idempotent, so inlining and CSE is benign (and might indeed improve performance).
+      System.IO.Unsafe.unsafeDupablePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
         case lookup text of
           Just symbol -> (next, symbol)
           Nothing -> insert text' next
-    {-# NOINLINE lookupOrInsert #-}
     insert text' next =
-      unsafePerformIO $ do
+      -- SAFETY: Courtesy of atomicModifyIORef', the blackhole check is not needed as we are guaranteed to be the only thread running this code at one time.
+      -- Also, since we depend on `next` we cannot flout out of the `atomicModifyIORef` lambda.
+      System.IO.Unsafe.unsafeDupablePerformIO $ do
         let !symbol = Symbol next
         weakSymbol <- Weak.mkWeakPtr symbol Nothing
         let !next' = next + 1
@@ -211,7 +215,6 @@ intern text =
               textToSymbols = HashMap.insert text' weakSymbol textToSymbols
             }
         pure (next', symbol)
-{-# INLINE intern #-}
 
 -- | Returns a handle to the global symbol table. (Only) useful for introspection or debugging.
 globalSymbolTable :: IO GlobalSymbolTable
@@ -222,15 +225,12 @@ globalSymbolTable =
 
 globalSymbolTable' :: GlobalSymbolTable
 globalSymbolTable' =
-  let !next = 0
-      !mappings = SymbolTableMappings HashMap.empty HashMap.empty
-      construct =
-        unsafePerformIO $ do
-          nextRef <- IORef.newIORef next
-          mappingsRef <- IORef.newIORef mappings
-          return (GlobalSymbolTable nextRef mappingsRef)
-      {-# NOINLINE construct #-}
-   in construct
+  -- SAFETY: We want all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
+  System.IO.Unsafe.unsafePerformIO $ do
+    nextRef <- IORef.newIORef 0
+    mappingsRef <- IORef.newIORef (SymbolTableMappings HashMap.empty HashMap.empty)
+    return (GlobalSymbolTable nextRef mappingsRef)
+{-# NOINLINE globalSymbolTable' #-}
 
 -- | Returns the current size of the global symbol table. Useful for introspection or metrics.
 globalSymbolTableSize :: IO Word
