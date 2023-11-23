@@ -16,7 +16,7 @@ import qualified Data.Text.Short as ShortText
 
 -- | Implemented by any String-like types.
 -- The symbol table uses `ShortText` for its internal storage, so any type which can be converted to it
--- can be turned to/from a `Symbol`.
+-- can be turned to/from a `Symbolize.Symbol`.
 --
 -- Instance should handle potential invalid UTF-8 by using the Unicode replacement character,
 -- c.f. `Data.Text.Encoding.Error.lenientDecode`.

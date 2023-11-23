@@ -26,11 +26,8 @@ source-repository head
 library
   exposed-modules:
       Symbolize
-      Symbolize.Textual
   other-modules:
-      Paths_symbolize
-  autogen-modules:
-      Paths_symbolize
+      Symbolize.Textual
   hs-source-dirs:
       src
   default-extensions:

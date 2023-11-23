@@ -1,35 +1,86 @@
--- | Implementation of a global Symbol Table, with garbage collection.
---
--- Symbols, also known as Atoms or Interned Strings, are a common technique
--- to reduce memory usage and improve performance when using many small strings.
---
--- By storing a single copy of each encountered string in a global table and giving out indexes to that table,
--- it is possible to compare strings for equality in constant time, instead of linear (in string size) time.
---
--- The main advantages of Symbolize over existing symbol table implementations are:
---
--- - Garbage collection: Symbols which are no longer used are automatically cleaned up.
--- - `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
--- - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
--- - Thread-safe.
--- - Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
--- - Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
---
--- ## Basic usage
---
--- This module is intended to be imported qualified, e.g.
---
--- ```
--- import Symbolize (Symbol)
--- import qualified Symbolize
--- ```
--- 
---
--- >>> hello = Symbolize.intern "hello"
--- >>> hello2 = Symbolize.intern "hello"
--- >>> hello == hello2 -- Runs in O(1) time
--- True
+{-| Implementation of a global Symbol Table, with garbage collection.
 
+Symbols, also known as Atoms or Interned Strings, are a common technique
+to reduce memory usage and improve performance when using many small strings.
+
+By storing a single copy of each encountered string in a global table and giving out indexes to that table,
+it is possible to compare strings for equality in constant time, instead of linear (in string size) time.
+
+The main advantages of Symbolize over existing symbol table implementations are:
+
+- Garbage collection: Symbols which are no longer used are automatically cleaned up.
+- `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
+- Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
+- Thread-safe.
+- Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
+- Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
+
+== Basic usage
+
+This module is intended to be imported qualified, e.g.
+
+
+
+> import Symbolize (Symbol)
+> import qualified Symbolize
+
+To intern a string, use `intern`:
+
+>>> hello = Symbolize.intern "hello"
+>>> world = Symbolize.intern "world"
+>>> (hello, world)
+(Symbolize.intern "hello",Symbolize.intern "world")
+
+Interning supports any `Textual` type, so you can also use `Data.Text` or `Data.ByteString` etc.:
+>>> import Data.Text (Text)
+>>> niceCheeses = Symbolize.intern <$> (["Roquefort", "Camembert", "Brie"] :: [Text])
+>>> niceCheeses
+[Symbolize.intern "Roquefort",Symbolize.intern "Camembert",Symbolize.intern "Brie"]
+
+And if you are using OverloadedStrings, you can use the `IsString` instance to intern constants:
+
+>>> hello2 = ("hello" :: Symbol)
+>>> hello2
+Symbolize.intern "hello"
+
+Comparisons between symbols run in O(1) time:
+
+>>> hello == hello2
+True
+>>> hello == world
+False
+
+To get back the textual value of a symbol, use `unintern`:
+
+>>> Symbolize.unintern hello
+"hello"
+
+If you only want to check whether a string is already interned, use `lookup`:
+
+>>> Symbolize.lookup "hello"
+Just (Symbolize.intern "hello")
+
+For introspection, you can look at how many symbols currently exist:
+
+>>> Symbolize.globalSymbolTableSize
+5
+>>> [unintern (intern (show x)) | x <- [1..5]]
+["1","2","3","4","5"]
+>>> Symbolize.globalSymbolTableSize
+10
+
+Unused symbols will be garbage-collected, so you don't have to worry about memory leaks:
+
+>>> System.Mem.performGC
+>>> Symbolize.globalSymbolTableSize
+5
+
+For further debugging, you can look at the Show instance of the global symbol table:
+/(Note that the exact representation of what is shown is subject to change.)/
+
+>>> Symbolize.globalSymbolTable
+GlobalSymbolTable { count = 5, next = 10, contents = [(0,"hello"),(1,"world"),(2,"Roquefort"),(3,"Camembert"),(4,"Brie")] }
+-}
 module Symbolize
   ( -- * Symbol
     Symbol,
@@ -120,7 +171,7 @@ instance Ord Symbol where
 -- Hashing a `Symbol` is very fast:
 --
 -- `hash` is a no-op and results in zero collissions, as `Symbol`'s index is unique and can be interpreted as a hash as-is.
--- `hashWithSalt` takes O(1) time; just as long as `hashWithSalting` any other `Word`.
+-- `hashWithSalt` takes O(1) time; just as long as hashWithSalt-ing any other `Word`.
 instance Hashable Symbol where
   hash (Symbol idx) = hash idx
   hashWithSalt salt (Symbol idx) = hashWithSalt salt idx
@@ -130,7 +181,7 @@ instance Hashable Symbol where
 -- | The global Symbol Table, containing a bidirectional mapping between each symbol's textual representation and its Word index.
 --
 -- You cannot manipulate the table itself directly,
--- but you can use `globalSymbolTable'` to get a handle to it and use its `Show` instance for introspection.
+-- but you can use `globalSymbolTable` to get a handle to it and use its `Show` instance for introspection.
 --
 -- `globalSymbolTableSize` can similarly be used to get the current size of the table.
 data GlobalSymbolTable = GlobalSymbolTable
