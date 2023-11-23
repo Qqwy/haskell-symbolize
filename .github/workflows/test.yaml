@@ -5,10 +5,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        ghc: ['9.8.1', '9.6.3', '9.4.8', '9.2.8', '8.10.7']
+        ghc: ['9.4.7']
+        # ghc: ['9.8.1', '9.6.3', '9.4.8', '9.2.8', '8.10.7']
         # cabal: ['2.4.1.0', '3.0.0.0']
         os: [ubuntu-latest, macOS-latest, windows-latest]
-    name: Haskell GHC ${{ matrix.ghc }} sample
+    name: Haskell GHC ${{ matrix.ghc }} stack test
     steps:
       - uses: actions/checkout@v2
       - name: Setup Haskell
