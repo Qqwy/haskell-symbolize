@@ -105,7 +105,7 @@ module Symbolize
   )
 where
 
-import Control.DeepSeq (NFData)
+import Control.DeepSeq (NFData(..))
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
@@ -120,8 +120,10 @@ import Symbolize.Textual (Textual (..))
 import qualified System.IO.Unsafe
 import System.Mem.Weak (Weak)
 import qualified System.Mem.Weak as Weak
-import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
+import Text.Read (Lexeme (Ident, Punc), step, lexP, parens, prec, readListPrecDefault)
+import qualified Text.Read
 import Prelude hiding (lookup)
+import qualified Debug.Trace
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -143,23 +145,23 @@ import Prelude hiding (lookup)
 -- Symbolize supports up to 2^64 symbols existing at the same type.
 -- Your system will probably run out of memory before you reach that point.
 data Symbol = Symbol {-# UNPACK #-} !Word
-  deriving (Generic, NFData)
+  deriving (Generic)
 
 instance Show Symbol where
   showsPrec p symbol =
+    let !str = unintern @String symbol
+     in
     showParen (p > 10) $
-      showString "Symbolize.intern " . shows (unintern @String symbol)
+      showString "Symbolize.intern " . shows str
 
 instance Read Symbol where
-  -- readsPrec _ str =
-  --   let sym = str & intern
-  --    in [(sym, "")]
-  readPrec = parens $ prec 10 $ do
-    Ident "Symbolize.intern" <- lexP
-    symbolString <- readPrec
-    return (intern @ShortText symbolString)
-
   readListPrec = readListPrecDefault
+  readPrec = parens $ prec 10 $ do
+    Ident "Symbolize" <- lexP
+    Text.Read.Symbol "." <- lexP
+    Ident "intern" <- lexP
+    str <- readPrec @String
+    return $ Symbolize.intern str
 
 instance IsString Symbol where
   fromString = intern
@@ -169,6 +171,10 @@ instance IsString Symbol where
 instance Eq Symbol where
   (Symbol a) == (Symbol b) = a == b
   {-# INLINE (==) #-}
+
+-- | Symbol contains only a strict `Word`, so it is already fully evaluated.
+instance NFData Symbol where
+  rnf sym = seq sym ()
 
 -- | Symbols are ordered by their `ShortText` representation.
 --
@@ -181,6 +187,7 @@ instance Ord Symbol where
 -- Hashing a `Symbol` is very fast:
 --
 -- `hash` is a no-op and results in zero collissions, as `Symbol`'s index is unique and can be interpreted as a hash as-is.
+--
 -- `hashWithSalt` takes O(1) time; just as long as hashWithSalt-ing any other `Word`.
 instance Hashable Symbol where
   hash (Symbol idx) = hash idx

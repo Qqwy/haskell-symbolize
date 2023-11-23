@@ -11,10 +11,10 @@ description:     Symbols, also known as Atoms or Interned Strings, are a common 
                 By storing a single copy of each encountered string in a global table and giving out indexes to that table, it is possible to compare strings for equality in constant time, instead of linear (in string size) time.
                 The main advantages of Symbolize over existing symbol table implementations are:
                 - Garbage collection: Symbols which are no longer used are automatically cleaned up. - `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC. - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc. - Thread-safe. - Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`) - Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
-                Please see the full README on GitHub at <https://github.com/Qqwy/symbolize#readme> 
+                Please see the full README on GitHub at <https://github.com/Qqwy/haskell-symbolize#readme> 
 category:       Data, Data Structures
-homepage:       https://github.com/Qqwy/symbolize#readme
-bug-reports:    https://github.com/Qqwy/symbolize/issues
+homepage:       https://github.com/Qqwy/haskell-symbolize#readme
+bug-reports:    https://github.com/Qqwy/haskell-symbolize/issues
 author:         Qqwy / Marten
 maintainer:     qqwy@gmx.com
 copyright:      2023 Marten Wijnja
@@ -27,7 +27,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/Qqwy/symbolize
+  location: https://github.com/Qqwy/haskell-symbolize
 
 library
   exposed-modules:
