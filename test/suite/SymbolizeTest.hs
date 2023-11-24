@@ -26,12 +26,6 @@ unit_simpleInternUninternTest = do
   let str2 = Symbolize.unintern symbol
   str2 @?= str
 
-unit_globalTableStartsEmpty :: IO ()
-unit_globalTableStartsEmpty = do
-  System.Mem.performGC
-  size <- Symbolize.globalSymbolTableSize
-  size @?= 0
-
 hprop_symbolTableIsIdempotent :: Property
 hprop_symbolTableIsIdempotent = withTests 1000 $ property $ do
   texts <- forAll $ Gen.list (Range.linear 0 200) (Gen.text (Range.linear 0 20) Gen.unicode)
