@@ -8,6 +8,8 @@ and this project adheres to the
 
 ## Unreleased
 
+Remove NOINLINE for lookup as it is now a proper IO function.
+
 ## 0.1.0.1 / 0.1.0.2 - 2023-11-24
 Fixes in the README and package description only, for better rendering on Hackage.
 

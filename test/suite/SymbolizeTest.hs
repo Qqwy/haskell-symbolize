@@ -5,13 +5,13 @@ module SymbolizeTest where
 import qualified Control.Concurrent.Async
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Hashable
-import Data.Text (Text)
+-- import Data.Text (Text)
 import Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import qualified Symbolize
-import qualified System.Mem
-import Test.Tasty.HUnit
+-- import qualified System.Mem
+-- import Test.Tasty.HUnit
 
 hprop_symbolTableIsIdempotent :: Property
 hprop_symbolTableIsIdempotent = withTests 1000 $ property $ do

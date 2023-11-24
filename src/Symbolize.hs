@@ -294,7 +294,6 @@ lookup text = do
     Nothing -> pure Nothing
     Just weak -> do
       Weak.deRefWeak weak
-{-# NOINLINE lookup #-}
 
 -- | Intern a string-like value.
 --
