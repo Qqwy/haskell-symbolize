@@ -30,13 +30,13 @@ unit_globalTableStartsEmpty = do
     size <- Symbolize.globalSymbolTableSize
     size @?= 0
 
-hprop_symbolTableIsIdempotent = property $ do
+hprop_symbolTableIsIdempotent = withTests 1000 $ property $ do
     -- text <- forAll $ (Gen.text (Range.linear 1 10) Gen.unicode)
     -- let list = [text | _ <- [1..100]]
     -- fmap (Symbolize.unintern . Symbolize.intern) list === list
     -- Symbolize.unintern (Symbolize.intern text) === text
     liftIO System.Mem.performGC
-    texts <- forAll $ Gen.list (Range.linear 0 100) (Gen.text (Range.linear 0 10) Gen.unicode)
+    texts <- forAll $ Gen.list (Range.linear 0 200) (Gen.text (Range.linear 0 20) Gen.unicode)
     let !symbols = fmap Symbolize.intern texts
     -- Debug.Trace.traceShow (fmap (show . Data.Hashable.hash) symbols)
     annotateShow (fmap Data.Hashable.hash symbols)
