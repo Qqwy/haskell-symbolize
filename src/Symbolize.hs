@@ -226,15 +226,17 @@ data GlobalSymbolTable = GlobalSymbolTable
 
 instance Show GlobalSymbolTable where
   show table =
-    -- NOTE: We want to make sure that (roughly) the same table state is used for each of the components
-    -- which is why we use BangPatterns such that a partially-read show string will end up printing a (roughly) consistent state.
-    let !next' = System.IO.Unsafe.unsafePerformIO $ MVar.readMVar (next table) -- IORef.readIORef (next table)
-        !mappings' = System.IO.Unsafe.unsafePerformIO $ IORef.readIORef (mappings table)
-        {-# NOINLINE mappings' #-}
-        !contents = mappings' & symbolsToText
-        -- !reverseContents = mappings' & textToSymbols & fmap  (fmap hash . System.IO.Unsafe.unsafePerformIO . Weak.deRefWeak) & HashMap.toList
-        !count = HashMap.size contents
-     in "GlobalSymbolTable { count = "
+    -- SAFETY: We're only reading, and do not care about performance here.
+    System.IO.Unsafe.unsafePerformIO $ do
+      -- NOTE: We want to make sure that (roughly) the same table state is used for each of the components
+      -- which is why we use BangPatterns such that a partially-read show string will end up printing a (roughly) consistent state.
+      !next' <- MVar.readMVar (next table) -- IORef.readIORef (next table)
+      !mappings' <- IORef.readIORef (mappings table)
+      let !contents = mappings' & symbolsToText
+      -- let !reverseContents = mappings' & textToSymbols & fmap  (fmap hash . System.IO.Unsafe.unsafePerformIO . Weak.deRefWeak) & HashMap.toList
+      let !count = HashMap.size contents
+      pure
+        $ "GlobalSymbolTable { count = "
           <> show count
           <> ", next = "
           <> show next'
@@ -280,36 +282,18 @@ unintern (Symbol idx) =
 -- Takes O(log16 n) time, where n is the number of symbols currently in the table.
 --
 -- Runs concurrently with any other operation on the symbol table, without any atomic memory barriers.
-lookup :: (Textual s) => s -> Maybe Symbol
-lookup text =
+--
+-- Because the result can vary depending on the current state of the symbol table, this function is not pure.
+lookup :: (Textual s) => s -> IO (Maybe Symbol)
+lookup text = do
   let !text' = toShortText text
-   in -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
-      -- NOTE: We want to make sure we re-read the latest version every time; floating out would be bad.
-      System.IO.Unsafe.unsafeDupablePerformIO $ do
-        table <- globalSymbolTable
-        mappings <- IORef.readIORef (mappings table)
-        let maybeWeak = mappings & textToSymbols & HashMap.lookup text'
-        case maybeWeak of
-          Nothing -> pure Nothing
-          Just weak -> do
-            Weak.deRefWeak weak
-
---     -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
---     -- NOTE: We want to make sure we re-read the latest version every time; floating out would be bad.
---     !mappings' = System.IO.Unsafe.unsafePerformIO $ IORef.readIORef $ Debug.Trace.trace "Evaluating mappings" (mappings globalSymbolTable')
---     {-# NOINLINE mappings' #-}
---  in mappings'
---       & textToSymbols
---       & HashMap.lookup text'
---       & lookupWeak text'
--- where
---   lookupWeak text' Nothing = Debug.Trace.traceShow ("Did not find symbol" <> show text') Nothing
---   lookupWeak text' (Just weak) =
---     weak
---     & Debug.Trace.traceShow ("Found text " <> show text')
---     & Weak.deRefWeak
---     -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
---     & System.IO.Unsafe.unsafePerformIO
+  table <- globalSymbolTable
+  mappings <- IORef.readIORef (mappings table)
+  let maybeWeak = mappings & textToSymbols & HashMap.lookup text'
+  case maybeWeak of
+    Nothing -> pure Nothing
+    Just weak -> do
+      Weak.deRefWeak weak
 {-# NOINLINE lookup #-}
 
 -- | Intern a string-like value.
@@ -325,16 +309,12 @@ intern text =
   where
     lookupOrInsert text' =
       -- SAFETY: `intern` is idempotent, so inlining and CSE is benign (and might indeed improve performance).
-      System.IO.Unsafe.unsafePerformIO $ MVar.modifyMVar (next globalSymbolTable') $ \next ->
-        -- System.IO.Unsafe.unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
-        -- System.IO.Unsafe.unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
-        case lookup text of
+      System.IO.Unsafe.unsafePerformIO $ MVar.modifyMVar (next globalSymbolTable') $ \next -> do
+        maybeWeak <- lookup text
+        case maybeWeak of
           Just symbol -> pure (next, symbol)
           Nothing -> insert text' next
     insert text' next = do
-      -- SAFETY: Courtesy of atomicModifyIORef', the blackhole check is not needed as we are guaranteed to be the only thread running this code at one time.
-      -- Also, since we depend on `next` we cannot flout out of the `atomicModifyIORef` lambda.
-      -- System.IO.Unsafe.unsafePerformIO $ do
       SymbolTableMappings {symbolsToText, textToSymbols} <- IORef.readIORef (mappings globalSymbolTable')
       let !idx = nextEmptyIndex next symbolsToText
       let !symbol = Symbol idx
@@ -355,7 +335,7 @@ nextEmptyIndex starting symbolsToText = go starting
   where
     go idx = case HashMap.lookup idx symbolsToText of
       Nothing -> idx
-      _ -> go (idx + 1) -- <- Wrapping on overflow is intentional
+      _ -> go (idx + 1) -- <- Wrapping on overflow is intentional and important for correctness
 
 -- | Returns a handle to the global symbol table. (Only) useful for introspection or debugging.
 globalSymbolTable :: IO GlobalSymbolTable
@@ -366,7 +346,7 @@ globalSymbolTable =
 
 globalSymbolTable' :: GlobalSymbolTable
 globalSymbolTable' =
-  -- SAFETY: We want all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
+  -- SAFETY: We need all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
   System.IO.Unsafe.unsafePerformIO $ do
     nextRef <- MVar.newMVar 0 -- IORef.newIORef 0
     mappingsRef <- IORef.newIORef (SymbolTableMappings HashMap.empty HashMap.empty)
@@ -388,8 +368,6 @@ globalSymbolTableSize = do
 finalizer :: Word -> IO ()
 finalizer idx = do
   MVar.withMVar (next globalSymbolTable') $ \_next -> do
-    -- SAFETY: Must not be dupable
-    -- System.IO.Unsafe.unsafePerformIO $ do
     IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
       case HashMap.lookup idx symbolsToText of
         Nothing -> error ("Duplicate finalizer called for " <> show idx <> "This should never happen") -- SymbolTableMappings {symbolsToText, textToSymbols}
@@ -398,5 +376,4 @@ finalizer idx = do
             { symbolsToText = HashMap.delete idx symbolsToText,
               textToSymbols = HashMap.delete text textToSymbols
             }
--- pure (next, ())
 {-# NOINLINE finalizer #-}
