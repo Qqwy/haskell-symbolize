@@ -1,6 +1,8 @@
 # Symbolize
 [![Hackage](http://img.shields.io/hackage/v/symbolize.svg)](https://hackage.haskell.org/package/symbolize)
 
+[API Documentation](https://hackage.haskell.org/package/symbolize/docs/Symbolize.html)
+
 Haskell library implementing a global Symbol Table, with garbage collection.
 
 Symbols, also known as Atoms or Interned Strings, are a common technique
