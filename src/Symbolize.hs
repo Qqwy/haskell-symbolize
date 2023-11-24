@@ -56,7 +56,7 @@
 -- >>> Symbolize.unintern hello
 -- "hello"
 --
--- If you only want to check whether a string is already interned, use `lookup`:
+-- If you want to check whether a string is currently interned, use `lookup`:
 --
 -- >>> Symbolize.lookup "hello"
 -- Just (Symbolize.intern "hello")
