@@ -12,6 +12,8 @@ import qualified System.Mem
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Hashable
 import qualified Debug.Trace
+import Control.Monad (forM, forM_)
+import qualified Control.Concurrent.Async
 
 -- unit_simpleInternUninternTest :: IO ()
 -- unit_simpleInternUninternTest = do 
@@ -30,20 +32,25 @@ unit_globalTableStartsEmpty = do
     size <- Symbolize.globalSymbolTableSize
     size @?= 0
 
+hprop_symbolTableIsIdempotent :: Property
 hprop_symbolTableIsIdempotent = withTests 1000 $ property $ do
-    -- text <- forAll $ (Gen.text (Range.linear 1 10) Gen.unicode)
-    -- let list = [text | _ <- [1..100]]
-    -- fmap (Symbolize.unintern . Symbolize.intern) list === list
-    -- Symbolize.unintern (Symbolize.intern text) === text
-    liftIO System.Mem.performGC
     texts <- forAll $ Gen.list (Range.linear 0 200) (Gen.text (Range.linear 0 20) Gen.unicode)
     let !symbols = fmap Symbolize.intern texts
-    -- Debug.Trace.traceShow (fmap (show . Data.Hashable.hash) symbols)
     annotateShow (fmap Data.Hashable.hash symbols)
     let !texts2 = fmap Symbolize.unintern symbols
-    liftIO System.Mem.performGC
 
     texts2 === texts
+    -- liftIO System.Mem.performGC -- <- On failure, makes debugging a little easier
 
     
     -- fmap (Symbolize.unintern . Symbolize.intern) texts === texts
+
+hprop_concurrentAccessDoesNotCorruptTable :: Property
+hprop_concurrentAccessDoesNotCorruptTable = withTests 500 $ property $ do
+    let numCores = 8
+    texts <- forAll $ Gen.list (Range.linear 0 200) (Gen.text (Range.linear 0 20) Gen.unicode)
+    results <- liftIO $ Control.Concurrent.Async.forConcurrently [(1 :: Integer)..numCores] $ \_ -> do
+        let !texts2 = fmap (\val -> Symbolize.unintern $! Symbolize.intern $! val) texts
+        pure texts2
+
+    mapM_ (=== texts) results

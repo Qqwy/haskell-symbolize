@@ -89,6 +89,7 @@ tests:
     - tasty-hedgehog
     - tasty-hunit
     - tasty-golden
+    - async
     build-tools:
       tasty-discover:tasty-discover
   symbolize-doctest:

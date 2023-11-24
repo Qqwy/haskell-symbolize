@@ -104,7 +104,8 @@ test-suite symbolize-test
   build-tool-depends:
       tasty-discover:tasty-discover
   build-depends:
-      base >=4.7 && <5
+      async
+    , base >=4.7 && <5
     , bytestring
     , deepseq
     , hashable
