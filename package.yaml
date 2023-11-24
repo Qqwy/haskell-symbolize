@@ -1,5 +1,5 @@
 name:                symbolize
-version:             0.1.0.0
+version:             0.1.0.1
 github:              "Qqwy/haskell-symbolize"
 license:             BSD-3-Clause
 author:              "Qqwy / Marten"
@@ -11,13 +11,13 @@ extra-source-files:
 - CHANGELOG.md
 
 # Metadata used when publishing your package
-synopsis:            Efficient global Symbol Table, with Garbage Collection. 
+synopsis:            Efficient global Symbol table, with Garbage Collection. 
 category:            Data, Data Structures
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description: "
+description: |
   Symbols, also known as Atoms or Interned Strings, are a common technique
   to reduce memory usage and improve performance when using many small strings.
 
@@ -33,8 +33,8 @@ description: "
   - Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
   - Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
 
-  Please see the full README on GitHub at <https://github.com/Qqwy/haskell-symbolize#readme>
-  "
+  Please see the full README below or on GitHub at <https://github.com/Qqwy/haskell-symbolize#readme>
+
 
 dependencies:
 - base >= 4.7 && < 5
