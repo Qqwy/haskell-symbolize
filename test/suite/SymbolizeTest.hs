@@ -10,10 +10,13 @@ import Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import qualified Symbolize
+import qualified System.Mem
 import Test.Tasty.HUnit
 
 unit_simpleInternUninternTest :: IO ()
 unit_simpleInternUninternTest = do
+  System.Mem.performGC
+
   let str = "hello" :: Text
   let !symbol = Symbolize.intern str
 
@@ -25,6 +28,7 @@ unit_simpleInternUninternTest = do
 
 unit_globalTableStartsEmpty :: IO ()
 unit_globalTableStartsEmpty = do
+  System.Mem.performGC
   size <- Symbolize.globalSymbolTableSize
   size @?= 0
 

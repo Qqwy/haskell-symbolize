@@ -38,17 +38,11 @@
 --
 -- And if you are using OverloadedStrings, you can use the `IsString` instance to intern constants:
 --
--- >>> globalSymbolTableSize
--- 5
 -- >>> hello2 = ("hello" :: Symbol)
 -- >>> hello2
 -- Symbolize.intern "hello"
--- >>> globalSymbolTableSize
--- 5
 -- >>> Symbolize.intern ("world" :: Text)
 -- Symbolize.intern "world"
--- >>> globalSymbolTableSize
--- 5
 --
 -- Comparisons between symbols run in O(1) time:
 --
@@ -111,6 +105,8 @@ module Symbolize
 where
 
 import Control.Applicative ((<|>))
+import Control.Concurrent.MVar (MVar)
+import qualified Control.Concurrent.MVar as MVar
 import Control.DeepSeq (NFData (..))
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
@@ -118,21 +114,18 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.Hashable (Hashable (..))
 import Data.IORef (IORef)
 import qualified Data.IORef as IORef
-import Control.Concurrent.MVar (MVar)
-import qualified Control.Concurrent.MVar as MVar
 import Data.String (IsString (..))
 import Data.Text.Display (Display (..))
 import Data.Text.Short (ShortText)
 import GHC.Read (Read (..))
-import Symbolize.Textual (Textual (..))
 import qualified Symbolize.Accursed
+import Symbolize.Textual (Textual (..))
 import qualified System.IO.Unsafe
 import System.Mem.Weak (Weak)
 import qualified System.Mem.Weak as Weak
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import qualified Text.Read
 import Prelude hiding (lookup)
-import qualified Debug.Trace
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -267,7 +260,7 @@ unintern (Symbol idx) =
   let !mappingsRef = mappings globalSymbolTable'
       -- SAFETY:
       -- First, it's thread-safe because we only read (from a single IORef).
-      -- Second, this function is idempotent and (outwardly) pure, 
+      -- Second, this function is idempotent and (outwardly) pure,
       -- so whether it is executed only once or many times for a particular Symbol does not matter in the slightest.
       -- Thus, we're very happy with the compiler inlining, CSE'ing or floating out this IO action.
       --
@@ -290,34 +283,33 @@ unintern (Symbol idx) =
 lookup :: (Textual s) => s -> Maybe Symbol
 lookup text =
   let !text' = toShortText text
-  in
-    -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
-    -- NOTE: We want to make sure we re-read the latest version every time; floating out would be bad.
-    System.IO.Unsafe.unsafeDupablePerformIO $ do
-      table <- globalSymbolTable
-      mappings <- IORef.readIORef (mappings table)
-      let maybeWeak = mappings & textToSymbols & HashMap.lookup text'
-      case maybeWeak of
-        Nothing -> pure Nothing
-        Just weak -> do
-          Weak.deRefWeak weak
+   in -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
+      -- NOTE: We want to make sure we re-read the latest version every time; floating out would be bad.
+      System.IO.Unsafe.unsafeDupablePerformIO $ do
+        table <- globalSymbolTable
+        mappings <- IORef.readIORef (mappings table)
+        let maybeWeak = mappings & textToSymbols & HashMap.lookup text'
+        case maybeWeak of
+          Nothing -> pure Nothing
+          Just weak -> do
+            Weak.deRefWeak weak
 
-  --     -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
-  --     -- NOTE: We want to make sure we re-read the latest version every time; floating out would be bad.
-  --     !mappings' = System.IO.Unsafe.unsafePerformIO $ IORef.readIORef $ Debug.Trace.trace "Evaluating mappings" (mappings globalSymbolTable')
-  --     {-# NOINLINE mappings' #-}
-  --  in mappings'
-  --       & textToSymbols
-  --       & HashMap.lookup text'
-  --       & lookupWeak text'
-  -- where
-  --   lookupWeak text' Nothing = Debug.Trace.traceShow ("Did not find symbol" <> show text') Nothing
-  --   lookupWeak text' (Just weak) =
-  --     weak
-  --     & Debug.Trace.traceShow ("Found text " <> show text')
-  --     & Weak.deRefWeak
-  --     -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
-  --     & System.IO.Unsafe.unsafePerformIO
+--     -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
+--     -- NOTE: We want to make sure we re-read the latest version every time; floating out would be bad.
+--     !mappings' = System.IO.Unsafe.unsafePerformIO $ IORef.readIORef $ Debug.Trace.trace "Evaluating mappings" (mappings globalSymbolTable')
+--     {-# NOINLINE mappings' #-}
+--  in mappings'
+--       & textToSymbols
+--       & HashMap.lookup text'
+--       & lookupWeak text'
+-- where
+--   lookupWeak text' Nothing = Debug.Trace.traceShow ("Did not find symbol" <> show text') Nothing
+--   lookupWeak text' (Just weak) =
+--     weak
+--     & Debug.Trace.traceShow ("Found text " <> show text')
+--     & Weak.deRefWeak
+--     -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
+--     & System.IO.Unsafe.unsafePerformIO
 {-# NOINLINE lookup #-}
 
 -- | Intern a string-like value.
@@ -334,8 +326,8 @@ intern text =
     lookupOrInsert text' =
       -- SAFETY: `intern` is idempotent, so inlining and CSE is benign (and might indeed improve performance).
       System.IO.Unsafe.unsafePerformIO $ MVar.modifyMVar (next globalSymbolTable') $ \next ->
-      -- System.IO.Unsafe.unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
-      -- System.IO.Unsafe.unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
+        -- System.IO.Unsafe.unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
+        -- System.IO.Unsafe.unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
         case lookup text of
           Just symbol -> pure (next, symbol)
           Nothing -> insert text' next
@@ -343,19 +335,19 @@ intern text =
       -- SAFETY: Courtesy of atomicModifyIORef', the blackhole check is not needed as we are guaranteed to be the only thread running this code at one time.
       -- Also, since we depend on `next` we cannot flout out of the `atomicModifyIORef` lambda.
       -- System.IO.Unsafe.unsafePerformIO $ do
-        SymbolTableMappings {symbolsToText, textToSymbols} <- IORef.readIORef (mappings globalSymbolTable')
-        let !idx = nextEmptyIndex next symbolsToText
-        let !symbol = Symbol idx
-        weakSymbol <- Weak.mkWeakPtr symbol (Just (finalizer idx))
-        let !mappings2 =
-              SymbolTableMappings
-                { symbolsToText = HashMap.insert idx text' symbolsToText,
-                  textToSymbols = HashMap.insert text' weakSymbol textToSymbols
-                }
-        IORef.atomicWriteIORef (mappings globalSymbolTable') mappings2
+      SymbolTableMappings {symbolsToText, textToSymbols} <- IORef.readIORef (mappings globalSymbolTable')
+      let !idx = nextEmptyIndex next symbolsToText
+      let !symbol = Symbol idx
+      weakSymbol <- Weak.mkWeakPtr symbol (Just (finalizer idx))
+      let !mappings2 =
+            SymbolTableMappings
+              { symbolsToText = HashMap.insert idx text' symbolsToText,
+                textToSymbols = HashMap.insert text' weakSymbol textToSymbols
+              }
+      IORef.atomicWriteIORef (mappings globalSymbolTable') mappings2
 
-        let !nextFree = idx + 1
-        pure (nextFree, symbol)
+      let !nextFree = idx + 1
+      pure (nextFree, symbol)
 {-# INLINE intern #-}
 
 nextEmptyIndex :: Word -> HashMap Word ShortText -> Word
@@ -398,13 +390,13 @@ finalizer idx = do
   MVar.withMVar (next globalSymbolTable') $ \_next -> do
     -- SAFETY: Must not be dupable
     -- System.IO.Unsafe.unsafePerformIO $ do
-      IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
-        case HashMap.lookup idx symbolsToText of
-          Nothing -> error ("Duplicate finalizer called for " <> show idx <> "This should never happen") -- SymbolTableMappings {symbolsToText, textToSymbols}
-          Just text ->
-            SymbolTableMappings
-              { symbolsToText = HashMap.delete idx symbolsToText,
-                textToSymbols = HashMap.delete text textToSymbols
-              }
-      -- pure (next, ())
+    IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
+      case HashMap.lookup idx symbolsToText of
+        Nothing -> error ("Duplicate finalizer called for " <> show idx <> "This should never happen") -- SymbolTableMappings {symbolsToText, textToSymbols}
+        Just text ->
+          SymbolTableMappings
+            { symbolsToText = HashMap.delete idx symbolsToText,
+              textToSymbols = HashMap.delete text textToSymbols
+            }
+-- pure (next, ())
 {-# NOINLINE finalizer #-}
