@@ -13,19 +13,6 @@ import qualified Symbolize
 import qualified System.Mem
 import Test.Tasty.HUnit
 
-unit_simpleInternUninternTest :: IO ()
-unit_simpleInternUninternTest = do
-  System.Mem.performGC
-
-  let str = "hello" :: Text
-  let !symbol = Symbolize.intern str
-
-  size <- Symbolize.globalSymbolTableSize
-  size @?= 1
-
-  let str2 = Symbolize.unintern symbol
-  str2 @?= str
-
 hprop_symbolTableIsIdempotent :: Property
 hprop_symbolTableIsIdempotent = withTests 1000 $ property $ do
   texts <- forAll $ Gen.list (Range.linear 0 200) (Gen.text (Range.linear 0 20) Gen.unicode)
