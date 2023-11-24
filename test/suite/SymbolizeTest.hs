@@ -3,28 +3,24 @@ module SymbolizeTest where
 import           Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
-import Test.Tasty
 import Test.Tasty.HUnit
-import Symbolize (Symbol)
 import qualified Symbolize
 import Data.Text (Text)
-import qualified System.Mem
+-- import qualified System.Mem
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Hashable
-import qualified Debug.Trace
-import Control.Monad (forM, forM_)
 import qualified Control.Concurrent.Async
 
--- unit_simpleInternUninternTest :: IO ()
--- unit_simpleInternUninternTest = do 
---     let str = "hello" :: Text
---     let !symbol = Symbolize.intern str
+unit_simpleInternUninternTest :: IO ()
+unit_simpleInternUninternTest = do 
+    let str = "hello" :: Text
+    let !symbol = Symbolize.intern str
 
---     size <- Symbolize.globalSymbolTableSize
---     size @?= 1
+    size <- Symbolize.globalSymbolTableSize
+    size @?= 1
 
---     let str2 = Symbolize.unintern symbol
---     str2 @?= str
+    let str2 = Symbolize.unintern symbol
+    str2 @?= str
 
 
 unit_globalTableStartsEmpty :: IO ()
@@ -40,10 +36,6 @@ hprop_symbolTableIsIdempotent = withTests 1000 $ property $ do
     let !texts2 = fmap Symbolize.unintern symbols
 
     texts2 === texts
-    -- liftIO System.Mem.performGC -- <- On failure, makes debugging a little easier
-
-    
-    -- fmap (Symbolize.unintern . Symbolize.intern) texts === texts
 
 hprop_concurrentAccessDoesNotCorruptTable :: Property
 hprop_concurrentAccessDoesNotCorruptTable = withTests 500 $ property $ do
