@@ -1,6 +1,6 @@
 # Symbolize
 [![Hackage](http://img.shields.io/hackage/v/symbolize.svg)](https://hackage.haskell.org/package/symbolize)
-[![HackageDocumentation](https://img.shields.io/static/v1?label=Documentation&message=Available&color=success)](https://hackage.haskell.org/package/symbolize/docs/Symbolize.html)
+[![HackageDocumentation](https://img.shields.io/badge/documentation-available-blue)](https://hackage.haskell.org/package/symbolize/docs/Symbolize.html)
 [![test](https://github.com/Qqwy/haskell-symbolize/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/Qqwy/haskell-symbolize/actions/workflows/test.yaml)
 
 Haskell library implementing a global Symbol Table, with garbage collection.
