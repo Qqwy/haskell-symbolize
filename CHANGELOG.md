@@ -8,4 +8,8 @@ and this project adheres to the
 
 ## Unreleased
 
-## 0.1.0.0 - YYYY-MM-DD
+## 0.1.0.1 / 0.1.0.2 - 2023-11-24
+Fixes in the README and package description only, for better rendering on Hackage.
+
+## 0.1.0.0 - 2023-11-24
+Initial version
