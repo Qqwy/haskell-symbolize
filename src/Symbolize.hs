@@ -64,10 +64,9 @@ Just (Symbolize.intern "hello")
 Symbols make great keys for `Data.HashMap` and `Data.HashSet`.
 Hashing them is a no-op and they are guaranteed to be unique:
 
->>> import qualified Data.Hashable as Hashable
->>> Hashable.hash hello
+>>> Data.Hashable.hash hello
 0
->>> fmap Hashable.hash niceCheeses
+>>> fmap Data.Hashable.hash niceCheeses
 [2,3,4]
 
 For introspection, you can look at how many symbols currently exist:
@@ -114,7 +113,6 @@ import Data.IORef (IORef)
 import qualified Data.IORef as IORef
 import Data.String (IsString (..))
 import Data.Text.Short (ShortText)
-import GHC.Generics (Generic)
 import GHC.Read (Read (..))
 import Symbolize.Textual (Textual (..))
 import qualified System.IO.Unsafe
@@ -123,6 +121,8 @@ import qualified System.Mem.Weak as Weak
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import qualified Text.Read
 import Prelude hiding (lookup)
+import Data.Text.Display (Display (..))
+import Control.Applicative ((<|>))
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -144,7 +144,6 @@ import Prelude hiding (lookup)
 -- Symbolize supports up to 2^64 symbols existing at the same type.
 -- Your system will probably run out of memory before you reach that point.
 data Symbol = Symbol {-# UNPACK #-} !Word
-  deriving (Generic)
 
 instance Show Symbol where
   showsPrec p symbol =
@@ -153,18 +152,36 @@ instance Show Symbol where
     showParen (p > 10) $
       showString "Symbolize.intern " . shows str
 
+-- | To be a good citizen w.r.t both `Show` and `IsString`, reading is supported two ways: 
+--
+-- >>> read @Symbol "Symbolize.intern \"Haskell\""
+-- Symbolize.intern "Haskell"
+-- >>> read @Symbol "\"Curry\""
+-- Symbolize.intern "Curry"
 instance Read Symbol where
   readListPrec = readListPrecDefault
-  readPrec = parens $ prec 10 $ do
-    Ident "Symbolize" <- lexP
-    Text.Read.Symbol "." <- lexP
-    Ident "intern" <- lexP
-    str <- readPrec @String
-    return $ Symbolize.intern str
+  readPrec = parens $ prec 10 $ full <|> onlyString
+    where
+      onlyString = do
+        str <- readPrec @String
+        return $ Symbolize.intern str
+      full = do
+        Ident "Symbolize" <- lexP
+        Text.Read.Symbol "." <- lexP
+        Ident "intern" <- lexP
+        str <- readPrec @String
+        return $ Symbolize.intern str
 
 instance IsString Symbol where
   fromString = intern
   {-# INLINE fromString #-}
+
+-- | 
+-- >>> Data.Text.Display.display (Symbolize.intern "Pizza")
+-- "Pizza"
+instance Display Symbol where
+  displayBuilder = unintern
+  {-# INLINE displayBuilder #-}
 
 -- | Takes only O(1) time.
 instance Eq Symbol where

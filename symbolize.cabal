@@ -39,12 +39,9 @@ library
   default-extensions:
       BangPatterns
       OverloadedStrings
-      DeriveGeneric
-      LambdaCase
       DeriveAnyClass
       TypeApplications
       NamedFieldPuns
-      RecordWildCards
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       base >=4.7 && <5
@@ -52,35 +49,7 @@ library
     , deepseq
     , hashable
     , text
-    , text-short
-    , unordered-containers
-  default-language: Haskell2010
-
-executable symbolize-exe
-  main-is: Main.hs
-  other-modules:
-      Paths_symbolize
-  autogen-modules:
-      Paths_symbolize
-  hs-source-dirs:
-      app
-  default-extensions:
-      BangPatterns
-      OverloadedStrings
-      DeriveGeneric
-      LambdaCase
-      DeriveAnyClass
-      TypeApplications
-      NamedFieldPuns
-      RecordWildCards
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      base >=4.7 && <5
-    , bytestring
-    , deepseq
-    , hashable
-    , symbolize
-    , text
+    , text-display
     , text-short
     , unordered-containers
   default-language: Haskell2010
@@ -97,12 +66,9 @@ test-suite symbolize-doctest
   default-extensions:
       BangPatterns
       OverloadedStrings
-      DeriveGeneric
-      LambdaCase
       DeriveAnyClass
       TypeApplications
       NamedFieldPuns
-      RecordWildCards
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
@@ -112,6 +78,7 @@ test-suite symbolize-doctest
     , hashable
     , symbolize
     , text
+    , text-display
     , text-short
     , unordered-containers
   default-language: Haskell2010
@@ -128,12 +95,9 @@ test-suite symbolize-test
   default-extensions:
       BangPatterns
       OverloadedStrings
-      DeriveGeneric
-      LambdaCase
       DeriveAnyClass
       TypeApplications
       NamedFieldPuns
-      RecordWildCards
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-tool-depends:
       tasty-discover:tasty-discover
@@ -149,6 +113,7 @@ test-suite symbolize-test
     , tasty-hedgehog
     , tasty-hunit
     , text
+    , text-display
     , text-short
     , unordered-containers
   default-language: Haskell2010
