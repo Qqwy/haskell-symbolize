@@ -15,7 +15,7 @@ The main advantages of Symbolize over existing symbol table implementations are:
 - `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
 - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
 - Thread-safe.
-- Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
+- Efficient: Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
 - Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
 
 ## Basic usage

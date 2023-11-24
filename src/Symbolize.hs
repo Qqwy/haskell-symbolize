@@ -1,102 +1,108 @@
-{-| Implementation of a global Symbol Table, with garbage collection.
-
-Symbols, also known as Atoms or Interned Strings, are a common technique
-to reduce memory usage and improve performance when using many small strings.
-
-By storing a single copy of each encountered string in a global table and giving out indexes to that table,
-it is possible to compare strings for equality in constant time, instead of linear (in string size) time.
-
-The main advantages of Symbolize over existing symbol table implementations are:
-
-- Garbage collection: Symbols which are no longer used are automatically cleaned up.
-- `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
-- Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
-- Thread-safe.
-- Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
-- Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
-
-== Basic usage
-
-This module is intended to be imported qualified, e.g.
-
-
-
-> import Symbolize (Symbol)
-> import qualified Symbolize
-
-To intern a string, use `intern`:
-
->>> hello = Symbolize.intern "hello"
->>> world = Symbolize.intern "world"
->>> (hello, world)
-(Symbolize.intern "hello",Symbolize.intern "world")
-
-Interning supports any `Textual` type, so you can also use `Data.Text` or `Data.ByteString` etc.:
-
->>> import Data.Text (Text)
->>> niceCheeses = fmap Symbolize.intern (["Roquefort", "Camembert", "Brie"] :: [Text])
->>> niceCheeses
-[Symbolize.intern "Roquefort",Symbolize.intern "Camembert",Symbolize.intern "Brie"]
-
-And if you are using OverloadedStrings, you can use the `IsString` instance to intern constants:
-
->>> hello2 = ("hello" :: Symbol)
->>> hello2
-Symbolize.intern "hello"
-
-Comparisons between symbols run in O(1) time:
-
->>> hello == hello2
-True
->>> hello == world
-False
-
-To get back the textual value of a symbol, use `unintern`:
-
->>> Symbolize.unintern hello
-"hello"
-
-If you only want to check whether a string is already interned, use `lookup`:
-
->>> Symbolize.lookup "hello"
-Just (Symbolize.intern "hello")
-
-Symbols make great keys for `Data.HashMap` and `Data.HashSet`.
-Hashing them is a no-op and they are guaranteed to be unique:
-
->>> Data.Hashable.hash hello
-0
->>> fmap Data.Hashable.hash niceCheeses
-[2,3,4]
-
-For introspection, you can look at how many symbols currently exist:
-
->>> Symbolize.globalSymbolTableSize
-5
->>> [unintern (intern (show x)) | x <- [1..5]]
-["1","2","3","4","5"]
->>> Symbolize.globalSymbolTableSize
-10
-
-Unused symbols will be garbage-collected, so you don't have to worry about memory leaks:
-
->>> System.Mem.performGC
->>> Symbolize.globalSymbolTableSize
-5
-
-For deeper introspection, you can look at the Show instance of the global symbol table:
-/(Note that the exact format is subject to change.)/
-
->>> Symbolize.globalSymbolTable
-GlobalSymbolTable { count = 5, next = 10, contents = [(0,"hello"),(1,"world"),(2,"Roquefort"),(3,"Camembert"),(4,"Brie")] }
--}
+-- | Implementation of a global Symbol Table, with garbage collection.
+--
+-- Symbols, also known as Atoms or Interned Strings, are a common technique
+-- to reduce memory usage and improve performance when using many small strings.
+--
+-- By storing a single copy of each encountered string in a global table and giving out indexes to that table,
+-- it is possible to compare strings for equality in constant time, instead of linear (in string size) time.
+--
+-- The main advantages of Symbolize over existing symbol table implementations are:
+--
+-- - Garbage collection: Symbols which are no longer used are automatically cleaned up.
+-- - `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
+-- - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
+-- - Thread-safe.
+-- - Efficient: Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
+-- - Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
+--
+-- == Basic usage
+--
+-- This module is intended to be imported qualified, e.g.
+--
+-- > import Symbolize (Symbol)
+-- > import qualified Symbolize
+--
+-- To intern a string, use `intern`:
+--
+-- >>> hello = Symbolize.intern "hello"
+-- >>> world = Symbolize.intern "world"
+-- >>> (hello, world)
+-- (Symbolize.intern "hello",Symbolize.intern "world")
+--
+-- Interning supports any `Textual` type, so you can also use `Data.Text` or `Data.ByteString` etc.:
+--
+-- >>> import Data.Text (Text)
+-- >>> niceCheeses = fmap Symbolize.intern (["Roquefort", "Camembert", "Brie"] :: [Text])
+-- >>> niceCheeses
+-- [Symbolize.intern "Roquefort",Symbolize.intern "Camembert",Symbolize.intern "Brie"]
+--
+-- And if you are using OverloadedStrings, you can use the `IsString` instance to intern constants:
+--
+-- >>> globalSymbolTableSize
+-- 5
+-- >>> hello2 = ("hello" :: Symbol)
+-- >>> hello2
+-- Symbolize.intern "hello"
+-- >>> globalSymbolTableSize
+-- 5
+-- >>> Symbolize.intern ("world" :: Text)
+-- Symbolize.intern "world"
+-- >>> globalSymbolTableSize
+-- 5
+--
+-- Comparisons between symbols run in O(1) time:
+--
+-- >>> hello == hello2
+-- True
+-- >>> hello == world
+-- False
+--
+-- To get back the textual value of a symbol, use `unintern`:
+--
+-- >>> Symbolize.unintern hello
+-- "hello"
+--
+-- If you only want to check whether a string is already interned, use `lookup`:
+--
+-- >>> Symbolize.lookup "hello"
+-- Just (Symbolize.intern "hello")
+--
+-- Symbols make great keys for `Data.HashMap` and `Data.HashSet`.
+-- Hashing them is a no-op and they are guaranteed to be unique:
+--
+-- >>> Data.Hashable.hash hello
+-- 0
+-- >>> fmap Data.Hashable.hash niceCheeses
+-- [2,3,4]
+--
+-- For introspection, you can look at how many symbols currently exist:
+--
+-- >>> Symbolize.globalSymbolTableSize
+-- 5
+-- >>> [unintern (intern (show x)) | x <- [1..5]]
+-- ["1","2","3","4","5"]
+-- >>> Symbolize.globalSymbolTableSize
+-- 10
+--
+-- Unused symbols will be garbage-collected, so you don't have to worry about memory leaks:
+--
+-- >>> System.Mem.performGC
+-- >>> Symbolize.globalSymbolTableSize
+-- 5
+--
+-- For deeper introspection, you can look at the Show instance of the global symbol table:
+-- /(Note that the exact format is subject to change.)/
+--
+-- >>> Symbolize.globalSymbolTable
+-- GlobalSymbolTable { count = 5, next = 10, contents = [(0,"hello"),(1,"world"),(2,"Roquefort"),(3,"Camembert"),(4,"Brie")] }
 module Symbolize
   ( -- * Symbol
     Symbol,
     intern,
     unintern,
     lookup,
-    Textual(..),
+    Textual (..),
+
     -- * Introspection & Metrics
     GlobalSymbolTable,
     globalSymbolTable,
@@ -104,25 +110,29 @@ module Symbolize
   )
 where
 
-import Control.DeepSeq (NFData(..))
+import Control.Applicative ((<|>))
+import Control.DeepSeq (NFData (..))
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.Hashable (Hashable (..))
 import Data.IORef (IORef)
 import qualified Data.IORef as IORef
+import Control.Concurrent.MVar (MVar)
+import qualified Control.Concurrent.MVar as MVar
 import Data.String (IsString (..))
+import Data.Text.Display (Display (..))
 import Data.Text.Short (ShortText)
 import GHC.Read (Read (..))
 import Symbolize.Textual (Textual (..))
+import qualified Symbolize.Accursed
 import qualified System.IO.Unsafe
 import System.Mem.Weak (Weak)
 import qualified System.Mem.Weak as Weak
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import qualified Text.Read
 import Prelude hiding (lookup)
-import Data.Text.Display (Display (..))
-import Control.Applicative ((<|>))
+import qualified Debug.Trace
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -148,11 +158,10 @@ data Symbol = Symbol {-# UNPACK #-} !Word
 instance Show Symbol where
   showsPrec p symbol =
     let !str = unintern @String symbol
-     in
-    showParen (p > 10) $
-      showString "Symbolize.intern " . shows str
+     in showParen (p > 10) $
+          showString "Symbolize.intern " . shows str
 
--- | To be a good citizen w.r.t both `Show` and `IsString`, reading is supported two ways: 
+-- | To be a good citizen w.r.t both `Show` and `IsString`, reading is supported two ways:
 --
 -- >>> read @Symbol "Symbolize.intern \"Haskell\""
 -- Symbolize.intern "Haskell"
@@ -176,7 +185,7 @@ instance IsString Symbol where
   fromString = intern
   {-# INLINE fromString #-}
 
--- | 
+-- |
 -- >>> Data.Text.Display.display (Symbolize.intern "Pizza")
 -- "Pizza"
 instance Display Symbol where
@@ -218,7 +227,7 @@ instance Hashable Symbol where
 --
 -- `globalSymbolTableSize` can similarly be used to get the current size of the table.
 data GlobalSymbolTable = GlobalSymbolTable
-  { next :: !(IORef Word),
+  { next :: !(MVar Word),
     mappings :: !(IORef SymbolTableMappings)
   }
 
@@ -226,14 +235,18 @@ instance Show GlobalSymbolTable where
   show table =
     -- NOTE: We want to make sure that (roughly) the same table state is used for each of the components
     -- which is why we use BangPatterns such that a partially-read show string will end up printing a (roughly) consistent state.
-    let !next' = System.IO.Unsafe.unsafePerformIO $ IORef.readIORef (next table)
+    let !next' = System.IO.Unsafe.unsafePerformIO $ MVar.readMVar (next table) -- IORef.readIORef (next table)
         !mappings' = System.IO.Unsafe.unsafePerformIO $ IORef.readIORef (mappings table)
+        {-# NOINLINE mappings' #-}
         !contents = mappings' & symbolsToText
+        -- !reverseContents = mappings' & textToSymbols & fmap  (fmap hash . System.IO.Unsafe.unsafePerformIO . Weak.deRefWeak) & HashMap.toList
         !count = HashMap.size contents
      in "GlobalSymbolTable { count = "
           <> show count
           <> ", next = "
           <> show next'
+          -- <> ", reverseContents = "
+          -- <> show reverseContents
           <> ", contents = "
           <> show (HashMap.toList contents)
           <> " }"
@@ -252,13 +265,19 @@ data SymbolTableMappings = SymbolTableMappings
 unintern :: (Textual s) => Symbol -> s
 unintern (Symbol idx) =
   let !mappingsRef = mappings globalSymbolTable'
-      -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafeDupablePerformIO here.
-      !mappings' = System.IO.Unsafe.unsafeDupablePerformIO $ IORef.readIORef mappingsRef
-      {-# NOINLINE mappings' #-}
+      -- SAFETY:
+      -- First, it's thread-safe because we only read (from a single IORef).
+      -- Second, this function is idempotent and (outwardly) pure, 
+      -- so whether it is executed only once or many times for a particular Symbol does not matter in the slightest.
+      -- Thus, we're very happy with the compiler inlining, CSE'ing or floating out this IO action.
+      --
+      -- I hope I'm correct and the Cosmic Horror will not eat me!
+      -- signed by Marten, 2023-11-24
+      !mappings' = Symbolize.Accursed.accursedUnutterablePerformIO $ IORef.readIORef mappingsRef
    in mappings'
         & symbolsToText
         & HashMap.lookup idx
-        & maybe (error "Symbol not found. This should never happen") fromShortText
+        & maybe (error ("Symbol " <> show idx <> " not found. This should never happen" <> show globalSymbolTable')) fromShortText
 {-# INLINE unintern #-}
 
 -- | Looks up a symbol in the global symbol table.
@@ -271,19 +290,35 @@ unintern (Symbol idx) =
 lookup :: (Textual s) => s -> Maybe Symbol
 lookup text =
   let !text' = toShortText text
-      !mappingsRef = mappings globalSymbolTable'
-      -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafeDupablePerformIO here.
-      !mappings' = System.IO.Unsafe.unsafeDupablePerformIO $ IORef.readIORef mappingsRef
-      {-# NOINLINE mappings' #-}
-   in mappings'
-        & textToSymbols
-        & HashMap.lookup text'
-        & lookupWeak
-  where
-    lookupWeak Nothing = Nothing
-    lookupWeak (Just weak) = System.IO.Unsafe.unsafePerformIO $ Weak.deRefWeak weak
-    {-# NOINLINE lookupWeak #-}
-{-# INLINE lookup #-}
+  in
+    -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
+    -- NOTE: We want to make sure we re-read the latest version every time; floating out would be bad.
+    System.IO.Unsafe.unsafeDupablePerformIO $ do
+      table <- globalSymbolTable
+      mappings <- IORef.readIORef (mappings table)
+      let maybeWeak = mappings & textToSymbols & HashMap.lookup text'
+      case maybeWeak of
+        Nothing -> pure Nothing
+        Just weak -> do
+          Weak.deRefWeak weak
+
+  --     -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
+  --     -- NOTE: We want to make sure we re-read the latest version every time; floating out would be bad.
+  --     !mappings' = System.IO.Unsafe.unsafePerformIO $ IORef.readIORef $ Debug.Trace.trace "Evaluating mappings" (mappings globalSymbolTable')
+  --     {-# NOINLINE mappings' #-}
+  --  in mappings'
+  --       & textToSymbols
+  --       & HashMap.lookup text'
+  --       & lookupWeak text'
+  -- where
+  --   lookupWeak text' Nothing = Debug.Trace.traceShow ("Did not find symbol" <> show text') Nothing
+  --   lookupWeak text' (Just weak) =
+  --     weak
+  --     & Debug.Trace.traceShow ("Found text " <> show text')
+  --     & Weak.deRefWeak
+  --     -- SAFETY: As we only read, duplicating the IO action is benign and thus we can use unsafePerformIO here.
+  --     & System.IO.Unsafe.unsafePerformIO
+{-# NOINLINE lookup #-}
 
 -- | Intern a string-like value.
 --
@@ -298,14 +333,16 @@ intern text =
   where
     lookupOrInsert text' =
       -- SAFETY: `intern` is idempotent, so inlining and CSE is benign (and might indeed improve performance).
-      System.IO.Unsafe.unsafeDupablePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
+      System.IO.Unsafe.unsafePerformIO $ MVar.modifyMVar (next globalSymbolTable') $ \next ->
+      -- System.IO.Unsafe.unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
+      -- System.IO.Unsafe.unsafePerformIO $ IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
         case lookup text of
-          Just symbol -> (next, symbol)
+          Just symbol -> pure (next, symbol)
           Nothing -> insert text' next
-    insert text' next =
+    insert text' next = do
       -- SAFETY: Courtesy of atomicModifyIORef', the blackhole check is not needed as we are guaranteed to be the only thread running this code at one time.
       -- Also, since we depend on `next` we cannot flout out of the `atomicModifyIORef` lambda.
-      System.IO.Unsafe.unsafeDupablePerformIO $ do
+      -- System.IO.Unsafe.unsafePerformIO $ do
         SymbolTableMappings {symbolsToText, textToSymbols} <- IORef.readIORef (mappings globalSymbolTable')
         let !idx = nextEmptyIndex next symbolsToText
         let !symbol = Symbol idx
@@ -315,10 +352,11 @@ intern text =
                 { symbolsToText = HashMap.insert idx text' symbolsToText,
                   textToSymbols = HashMap.insert text' weakSymbol textToSymbols
                 }
-        IORef.writeIORef (mappings globalSymbolTable') mappings2
+        IORef.atomicWriteIORef (mappings globalSymbolTable') mappings2
 
         let !nextFree = idx + 1
         pure (nextFree, symbol)
+{-# INLINE intern #-}
 
 nextEmptyIndex :: Word -> HashMap Word ShortText -> Word
 nextEmptyIndex starting symbolsToText = go starting
@@ -338,7 +376,7 @@ globalSymbolTable' :: GlobalSymbolTable
 globalSymbolTable' =
   -- SAFETY: We want all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
   System.IO.Unsafe.unsafePerformIO $ do
-    nextRef <- IORef.newIORef 0
+    nextRef <- MVar.newMVar 0 -- IORef.newIORef 0
     mappingsRef <- IORef.newIORef (SymbolTableMappings HashMap.empty HashMap.empty)
     return (GlobalSymbolTable nextRef mappingsRef)
 {-# NOINLINE globalSymbolTable' #-}
@@ -356,17 +394,17 @@ globalSymbolTableSize = do
   pure size
 
 finalizer :: Word -> IO ()
-finalizer idx =
-  IORef.atomicModifyIORef' (next globalSymbolTable') $ \next ->
+finalizer idx = do
+  MVar.withMVar (next globalSymbolTable') $ \_next -> do
     -- SAFETY: Must not be dupable
-    System.IO.Unsafe.unsafePerformIO $ do
+    -- System.IO.Unsafe.unsafePerformIO $ do
       IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
         case HashMap.lookup idx symbolsToText of
-          Nothing -> SymbolTableMappings {symbolsToText, textToSymbols}
+          Nothing -> error ("Duplicate finalizer called for " <> show idx <> "This should never happen") -- SymbolTableMappings {symbolsToText, textToSymbols}
           Just text ->
             SymbolTableMappings
               { symbolsToText = HashMap.delete idx symbolsToText,
                 textToSymbols = HashMap.delete text textToSymbols
               }
-      pure (next, ())
+      -- pure (next, ())
 {-# NOINLINE finalizer #-}

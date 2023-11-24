@@ -34,6 +34,7 @@ library
       Symbolize
   other-modules:
       Symbolize.Textual
+      Symbolize.Accursed
   hs-source-dirs:
       src
   default-extensions:
@@ -87,6 +88,7 @@ test-suite symbolize-test
   type: exitcode-stdio-1.0
   main-is: Suite.hs
   other-modules:
+      SymbolizeTest
       Paths_symbolize
   autogen-modules:
       Paths_symbolize

@@ -61,6 +61,7 @@ library:
   source-dirs: src
   other-modules:
   - Symbolize.Textual
+  - Symbolize.Accursed
 
 # executables:
 #   symbolize-exe:
