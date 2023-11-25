@@ -45,7 +45,7 @@ dependencies:
 - text-display         >= 0.0.5 && < 0.1
 - text-short           >= 0.1.0 && < 0.2
 - unordered-containers >= 0.2.0 && < 0.3
-- containers
+- containers           >= 0.6.0 && < 0.7
 
 ghc-options:
 - -Wall
