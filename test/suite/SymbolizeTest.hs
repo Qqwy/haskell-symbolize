@@ -1,6 +1,5 @@
+{-# OPTIONS_GHC -Wno-missing-export-lists #-}
 module SymbolizeTest where
-
--- import qualified System.Mem
 
 import qualified Control.Concurrent.Async
 import Control.Monad.IO.Class (liftIO)
