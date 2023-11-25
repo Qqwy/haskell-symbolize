@@ -221,6 +221,12 @@ instance Hashable Symbol where
 -- but you can use `globalSymbolTable` to get a handle to it and use its `Show` instance for introspection.
 --
 -- `globalSymbolTableSize` can similarly be used to get the current size of the table.
+--
+-- Current implementation details (these might change even between PVP-compatible versions):
+-- 
+-- - A (containers) `Map` is used for mapping text -> symbol. This has O(log2(n)) lookup time, but is resistent to HashDoS attacks.
+-- - A (unordered-containers) `HashMap` is used for mapping symbol -> text. This has O(log16(n)) lookup time. 
+--   Because symbols are unique and their values are not user-generated, there is no danger of HashDoS here.
 data GlobalSymbolTable = GlobalSymbolTable
   { next :: !(MVar Word),
     mappings :: !(IORef SymbolTableMappings)
@@ -254,7 +260,7 @@ data SymbolTableMappings = SymbolTableMappings
   }
 
 -- | Unintern a symbol, returning its textual value.
--- Takes O(log16 n) time to look up the matching textual value, where n is the number of symbols currently in the table.
+-- Takes O(log16(n)) time to look up the matching textual value, where n is the number of symbols currently in the table.
 --
 -- Afterwards, the textual value is converted to the desired type s. See `Textual` for the type-specific time complexity.
 --
@@ -281,7 +287,7 @@ unintern (Symbol idx) =
 --
 -- Returns `Nothing` if no such symbol currently exists.
 --
--- Takes O(log16 n) time, where n is the number of symbols currently in the table.
+-- Takes O(log2(n)) time, where n is the number of symbols currently in the table.
 --
 -- Runs concurrently with any other operation on the symbol table, without any atomic memory barriers.
 --
@@ -300,7 +306,7 @@ lookup text = do
 -- | Intern a string-like value.
 --
 -- First converts s to a `ShortText` (if it isn't already one). See `Textual` for the type-specific time complexity of this.
--- Then, takes O(log16 n) time to look up the matching symbol and insert it if it did not exist yet (where n is the number of symbols currently in the table).
+-- Then, takes O(log2(n)) time to look up the matching symbol and insert it if it did not exist yet (where n is the number of symbols currently in the table).
 --
 -- Any concurrent calls to (the critical section in) `intern` are synchronized.
 intern :: (Textual s) => s -> Symbol

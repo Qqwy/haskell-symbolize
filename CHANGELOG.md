@@ -8,7 +8,7 @@ and this project adheres to the
 
 ## Unreleased
 
-- Switch from `HashMap ShortText (Weak Symbol)` to `Map ShortText (Weak Symbol)` for the textTosymbol part of the global symbol table. Potentially slightly slower, but HashDoS-resistant. 
+- Switch from `HashMap ShortText (Weak Symbol)` to `Map ShortText (Weak Symbol)` for the `textTosymbol` part of the global symbol table. Potentially slightly slower, but HashDoS-resistant. 
  (Note that the `symbolToText :: HashMap Word -> ShortText` is unaffected as its keys are not user-created and guaranteed unique.)
 - Remove NOINLINE for lookup as it is now a proper IO function.
 
