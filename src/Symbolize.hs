@@ -111,6 +111,8 @@ import Control.DeepSeq (NFData (..))
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Hashable (Hashable (..))
 import Data.IORef (IORef)
 import qualified Data.IORef as IORef
@@ -247,7 +249,7 @@ instance Show GlobalSymbolTable where
           <> " }"
 
 data SymbolTableMappings = SymbolTableMappings
-  { textToSymbols :: !(HashMap ShortText (Weak Symbol)),
+  { textToSymbols :: !(Map ShortText (Weak Symbol)),
     symbolsToText :: !(HashMap Word ShortText)
   }
 
@@ -289,7 +291,7 @@ lookup text = do
   let !text' = toShortText text
   table <- globalSymbolTable
   mappings <- IORef.readIORef (mappings table)
-  let maybeWeak = mappings & textToSymbols & HashMap.lookup text'
+  let maybeWeak = mappings & textToSymbols & Map.lookup text'
   case maybeWeak of
     Nothing -> pure Nothing
     Just weak -> do
@@ -321,7 +323,7 @@ intern text =
       let !mappings2 =
             SymbolTableMappings
               { symbolsToText = HashMap.insert idx text' symbolsToText,
-                textToSymbols = HashMap.insert text' weakSymbol textToSymbols
+                textToSymbols = Map.insert text' weakSymbol textToSymbols
               }
       IORef.atomicWriteIORef (mappings globalSymbolTable') mappings2
 
@@ -348,7 +350,7 @@ globalSymbolTable' =
   -- SAFETY: We need all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
   System.IO.Unsafe.unsafePerformIO $ do
     nextRef <- MVar.newMVar 0 -- IORef.newIORef 0
-    mappingsRef <- IORef.newIORef (SymbolTableMappings HashMap.empty HashMap.empty)
+    mappingsRef <- IORef.newIORef (SymbolTableMappings Map.empty HashMap.empty)
     return (GlobalSymbolTable nextRef mappingsRef)
 {-# NOINLINE globalSymbolTable' #-}
 
@@ -373,6 +375,6 @@ finalizer idx = do
         Just text ->
           SymbolTableMappings
             { symbolsToText = HashMap.delete idx symbolsToText,
-              textToSymbols = HashMap.delete text textToSymbols
+              textToSymbols = Map.delete text textToSymbols
             }
 {-# NOINLINE finalizer #-}

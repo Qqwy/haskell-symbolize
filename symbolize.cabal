@@ -58,6 +58,7 @@ library
   build-depends:
       base >=4.7 && <5
     , bytestring >=0.11.0 && <0.12
+    , containers
     , deepseq >=1.4.0 && <1.5
     , hashable >=1.4.0 && <1.5
     , text >=2.0 && <2.2
@@ -85,6 +86,7 @@ test-suite symbolize-doctest
   build-depends:
       base >=4.7 && <5
     , bytestring >=0.11.0 && <0.12
+    , containers
     , deepseq >=1.4.0 && <1.5
     , doctest-parallel
     , hashable >=1.4.0 && <1.5
@@ -118,6 +120,7 @@ test-suite symbolize-test
       async
     , base >=4.7 && <5
     , bytestring >=0.11.0 && <0.12
+    , containers
     , deepseq >=1.4.0 && <1.5
     , hashable >=1.4.0 && <1.5
     , hedgehog

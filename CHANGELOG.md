@@ -8,7 +8,9 @@ and this project adheres to the
 
 ## Unreleased
 
-Remove NOINLINE for lookup as it is now a proper IO function.
+- Switch from `HashMap ShortText (Weak Symbol)` to `Map ShortText (Weak Symbol)` for the textTosymbol part of the global symbol table. Potentially slightly slower, but HashDoS-resistant. 
+ (Note that the `symbolToText :: HashMap Word -> ShortText` is unaffected as its keys are not user-created and guaranteed unique.)
+- Remove NOINLINE for lookup as it is now a proper IO function.
 
 ## 0.1.0.1 / 0.1.0.2 - 2023-11-24
 Fixes in the README and package description only, for better rendering on Hackage.
