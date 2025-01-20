@@ -89,72 +89,92 @@
 --
 -- >>> Symbolize.globalSymbolTable
 -- GlobalSymbolTable { count = 5, next = 10, contents = [(0,"hello"),(1,"world"),(2,"Roquefort"),(3,"Camembert"),(4,"Brie")] }
-module Symbolize
-  ( -- * Symbol
-    Symbol,
-    intern,
-    unintern,
-    lookup,
-    Textual (..),
+{-# LANGUAGE GHC2021 #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE DerivingStrategies #-}
+module Symbolize (
+    -- * Symbol
+    Symbol, 
+    intern, 
+    unintern, 
+    lookup, 
+    Textual (..), 
 
     -- * Introspection & Metrics
-    GlobalSymbolTable,
-    globalSymbolTable,
-    globalSymbolTableSize,
-  )
-where
+    GlobalSymbolTable, 
+    globalSymbolTable, 
+    globalSymbolTableSize
+    )
+    where
 
+import Prelude hiding (lookup)
 import Control.Applicative ((<|>))
-import Control.Concurrent.MVar (MVar)
-import qualified Control.Concurrent.MVar as MVar
-import Control.DeepSeq (NFData (..))
 import Data.Function ((&))
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HashMap
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import Data.Hashable (Hashable (..))
-import Data.IORef (IORef)
-import qualified Data.IORef as IORef
 import Data.String (IsString (..))
-import Data.Text.Display (Display (..))
 import Data.Text.Short (ShortText)
+import Data.Text.Short qualified as Text.Short
+import Data.Text.Short.Unsafe qualified as Text.Short.Unsafe
+import Data.Text.Display (Display (..))
+import Data.ByteString.Short (ShortByteString(..))
+import Data.Primitive.ByteArray (ByteArray(..), ByteArray#)
+import Data.Hashable qualified as Hashable
+import Control.DeepSeq (NFData (..))
+import GHC.Int (Int(I#))
+import GHC.Exts (addr2Int#, byteArrayContents#)
 import GHC.Read (Read (..))
-import qualified Symbolize.Accursed
-import Symbolize.Textual (Textual (..))
-import qualified System.IO.Unsafe
-import System.Mem.Weak (Weak)
-import qualified System.Mem.Weak as Weak
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import qualified Text.Read
-import Prelude hiding (lookup)
+import qualified System.IO.Unsafe
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
+import System.Mem.Weak (Weak)
+import qualified System.Mem.Weak as Weak
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
--- | A string-like type with O(1) equality and comparison.
+
+import Symbolize.Accursed
+import Symbolize.Textual (Textual)
+import Symbolize.Textual qualified as Textual
+
+-- INVARIANTS:
 --
--- A Symbol represents a string (any `Textual`, so String, Text, ByteString etc.)
--- However, it only stores an (unpacked) `Word`, used as index into a global table in which the actual string value is stored.
--- Thus equality checks are constant-time, and its memory footprint is very low.
---
--- This is very useful if you're frequently comparing strings
--- and the same strings might come up many times.
--- It also makes Symbol a great candidate for a key in a `HashMap` or `Data.HashSet`. (Hashing them is a no-op!)
---
--- The symbol table is implemented using weak pointers,
--- which means that unused symbols will be garbage collected.
--- As such, you do not need to be concerned about memory leaks.
---
--- Symbols are considered 'the same' regardless of whether they originate
--- from a `String`, (lazy or strict, normal or short) `Data.Text`, (lazy or strict, normal or short) `Data.ByteString` etc.
---
--- Symbolize supports up to 2^64 symbols existing at the same type.
--- Your system will probably run out of memory before you reach that point.
-data Symbol = Symbol {-# UNPACK #-} !Word
+-- - The ByteArray is a valid UTF-8 string and thus can be cheaply turned back into a 
+--   `ShortText` simply by casting.
+-- - The ByteArray is pinned, because we rely on its pointer address being stable.
+newtype Symbol = Symbol ByteArray
+
+instance Eq Symbol where
+  a == b = innerByteArray# a `Symbolize.Accursed.sameByteArray` innerByteArray# b
+  {-# INLINE (==) #-}
+
+instance Ord Symbol where
+    -- We do an extra ptr-equality check here,
+    -- since ShortText doesn't do it
+    compare a b | a == b = EQ
+    compare a b = compare (symbolToShortText a) (symbolToShortText b)
+    {-# INLINE compare #-}
+
+
+instance Hashable.Hashable Symbol where
+    hash = symbolAddrInt
+    {-# INLINE hash #-}
+    hashWithSalt = Hashable.defaultHashWithSalt
+    {-# INLINE hashWithSalt #-}
+
+instance Display Symbol where
+    displayBuilder = unintern
+    {-# INLINE displayBuilder #-}
 
 instance Show Symbol where
-  showsPrec p symbol =
-    let !str = unintern @String symbol
-     in showParen (p > 10) $
-          showString "Symbolize.intern " . shows str
+    showsPrec p symbol = 
+        let !str = unintern @String symbol
+        in showParen (p > 10) $
+            showString "Symbolize.intern " . shows str
+
+-- | Symbol contains by definition always an already-evaluated ByteArray#
+instance NFData Symbol where
+  rnf sym = seq sym ()
 
 -- | To be a good citizen w.r.t both `Show` and `IsString`, reading is supported two ways:
 --
@@ -168,219 +188,101 @@ instance Read Symbol where
     where
       onlyString = do
         str <- readPrec @String
-        return $ Symbolize.intern str
+        return $ intern str
       full = do
         Ident "Symbolize" <- lexP
         Text.Read.Symbol "." <- lexP
         Ident "intern" <- lexP
         str <- readPrec @String
-        return $ Symbolize.intern str
+        return $ intern str
 
 instance IsString Symbol where
-  fromString = intern
-  {-# INLINE fromString #-}
+    fromString = intern
+    {-# INLINE fromString #-}
 
--- |
--- >>> Data.Text.Display.display (Symbolize.intern "Pizza")
--- "Pizza"
-instance Display Symbol where
-  displayBuilder = unintern
-  {-# INLINE displayBuilder #-}
+innerByteArray# :: Symbol -> ByteArray#
+innerByteArray# (Symbol (ByteArray ba#)) = ba#
 
--- | Takes only O(1) time.
-instance Eq Symbol where
-  (Symbol a) == (Symbol b) = a == b
-  {-# INLINE (==) #-}
+symbolAddrInt :: Symbol -> Int
+symbolAddrInt s = I# (addr2Int# (byteArrayContents# (innerByteArray# s)))
 
--- | Symbol contains only a strict `Word`, so it is already fully evaluated.
-instance NFData Symbol where
-  rnf sym = seq sym ()
+symbolToShortText :: Symbol -> ShortText
+symbolToShortText (Symbol (ByteArray ba#)) = 
+    (SBS ba#)
+    & Text.Short.Unsafe.fromShortByteStringUnsafe
 
--- | Symbols are ordered by their `ShortText` representation.
---
--- Comparison takes O(n) time, as they are compared byte-by-byte.
-instance Ord Symbol where
-  compare a b = compare (unintern @ShortText a) (unintern @ShortText b)
-  {-# INLINE compare #-}
+unintern :: (Textual str) => Symbol -> str
+unintern s =
+    s
+    & symbolToShortText
+    & Textual.fromShortText
 
--- |
--- Hashing a `Symbol` is very fast:
---
--- `hash` is a no-op and results in zero collissions, as `Symbol`'s index is unique and can be interpreted as a hash as-is.
---
--- `hashWithSalt` takes O(1) time; just as long as hashWithSalt-ing any other `Word`.
-instance Hashable Symbol where
-  hash (Symbol idx) = hash idx
-  hashWithSalt salt (Symbol idx) = hashWithSalt salt idx
-  {-# INLINE hash #-}
-  {-# INLINE hashWithSalt #-}
+intern :: (Textual str) => str -> Symbol
+intern str =
+    let
+        in System.IO.Unsafe.unsafePerformIO $ do 
+            let !text = Textual.toShortText str
+            IORef.atomicModifyIORef' (symbolTableRef globalSymbolTable') $ \symtab -> System.IO.Unsafe.unsafePerformIO $ do
+                res <- lookupCritical symtab text
+                case res of
+                    Just sym -> pure (symtab, sym)
+                    Nothing ->
+                        insert symtab text
 
--- | The global Symbol Table, containing a bidirectional mapping between each symbol's textual representation and its Word index.
---
--- You cannot manipulate the table itself directly,
--- but you can use `globalSymbolTable` to get a handle to it and use its `Show` instance for introspection.
---
--- `globalSymbolTableSize` can similarly be used to get the current size of the table.
---
--- Current implementation details (these might change even between PVP-compatible versions):
--- 
--- - A (containers) `Map` is used for mapping text -> symbol. This has O(log2(n)) lookup time, but is resistent to HashDoS attacks.
--- - A (unordered-containers) `HashMap` is used for mapping symbol -> text. This has O(log16(n)) lookup time. 
---   Because symbols are unique and their values are not user-generated, there is no danger of HashDoS here.
-data GlobalSymbolTable = GlobalSymbolTable
-  { next :: !(MVar Word),
-    mappings :: !(IORef SymbolTableMappings)
-  }
+lookup :: (Textual str) => str -> IO (Maybe Symbol)
+lookup = lookupInner . Textual.toShortText
+
+lookupInner :: ShortText -> IO (Maybe Symbol)
+lookupInner text = do
+    symtab <- IORef.readIORef (symbolTableRef globalSymbolTable')
+    lookupCritical symtab text
+
+lookupCritical :: SymbolTable -> ShortText -> IO (Maybe Symbol)
+lookupCritical (SymbolTable table) text = 
+    case Map.lookup text table of
+        Nothing -> pure Nothing
+        Just weak -> Weak.deRefWeak weak
+
+insert :: SymbolTable -> ShortText -> IO (SymbolTable, Symbol)
+insert (SymbolTable table) text = do
+    let !ba = shortTextToByteArray text
+    let !sym = Symbol (Symbolize.Accursed.ensurePinned ba)
+    weak <- Weak.mkWeakPtr sym (Just (finalizer text))
+    pure (SymbolTable $ Map.insert text weak table, sym)
+
+newtype SymbolTable = SymbolTable (Map ShortText (Weak Symbol))
+newtype GlobalSymbolTable = GlobalSymbolTable {symbolTableRef :: IORef SymbolTable}
 
 instance Show GlobalSymbolTable where
-  show table =
     -- SAFETY: We're only reading, and do not care about performance here.
-    System.IO.Unsafe.unsafePerformIO $ do
-      -- NOTE: We want to make sure that (roughly) the same table state is used for each of the components
-      -- which is why we use BangPatterns such that a partially-read show string will end up printing a (roughly) consistent state.
-      !next' <- MVar.readMVar (next table) -- IORef.readIORef (next table)
-      !mappings' <- IORef.readIORef (mappings table)
-      let !contents = mappings' & symbolsToText
-      -- let !reverseContents = mappings' & textToSymbols & fmap  (fmap hash . System.IO.Unsafe.unsafePerformIO . Weak.deRefWeak) & HashMap.toList
-      let !count = HashMap.size contents
-      pure
-        $ "GlobalSymbolTable { count = "
-          <> show count
-          <> ", next = "
-          <> show next'
-          -- <> ", reverseContents = "
-          -- <> show reverseContents
-          <> ", contents = "
-          <> show (HashMap.toList contents)
-          <> " }"
+    show table = System.IO.Unsafe.unsafePerformIO $ do
+        SymbolTable symtab <- IORef.readIORef (symbolTableRef table)
+        let keys = Map.keys symtab
+        pure $ "GlobalSymbolTable { contents = " <> show keys <> "}"
 
-data SymbolTableMappings = SymbolTableMappings
-  { textToSymbols :: !(Map ShortText (Weak Symbol)),
-    symbolsToText :: !(HashMap Word ShortText)
-  }
-
--- | Unintern a symbol, returning its textual value.
--- Takes O(log16(n)) time to look up the matching textual value, where n is the number of symbols currently in the table.
---
--- Afterwards, the textual value is converted to the desired type s. See `Textual` for the type-specific time complexity.
---
--- Runs concurrently with any other operation on the symbol table, without any atomic memory barriers.
-unintern :: (Textual s) => Symbol -> s
-unintern (Symbol idx) =
-  let !mappingsRef = mappings globalSymbolTable'
-      -- SAFETY:
-      -- First, it's thread-safe because we only read (from a single IORef).
-      -- Second, this function is idempotent and (outwardly) pure,
-      -- so whether it is executed only once or many times for a particular Symbol does not matter in the slightest.
-      -- Thus, we're very happy with the compiler inlining, CSE'ing or floating out this IO action.
-      --
-      -- I hope I'm correct and the Cosmic Horror will not eat me!
-      -- signed by Marten, 2023-11-24
-      !mappings' = Symbolize.Accursed.accursedUnutterablePerformIO $ IORef.readIORef mappingsRef
-   in mappings'
-        & symbolsToText
-        & HashMap.lookup idx
-        & maybe (error ("Symbol " <> show idx <> " not found. This should never happen" <> show globalSymbolTable')) fromShortText
-{-# INLINE unintern #-}
-
--- | Looks up a symbol in the global symbol table.
---
--- Returns `Nothing` if no such symbol currently exists.
---
--- Takes O(log2(n)) time, where n is the number of symbols currently in the table.
---
--- Runs concurrently with any other operation on the symbol table, without any atomic memory barriers.
---
--- Because the result can vary depending on the current state of the symbol table, this function is not pure.
-lookup :: (Textual s) => s -> IO (Maybe Symbol)
-lookup text = do
-  let !text' = toShortText text
-  table <- globalSymbolTable
-  mappings <- IORef.readIORef (mappings table)
-  let maybeWeak = mappings & textToSymbols & Map.lookup text'
-  case maybeWeak of
-    Nothing -> pure Nothing
-    Just weak -> do
-      Weak.deRefWeak weak
-
--- | Intern a string-like value.
---
--- First converts s to a `ShortText` (if it isn't already one). See `Textual` for the type-specific time complexity of this.
--- Then, takes O(log2(n)) time to look up the matching symbol and insert it if it did not exist yet (where n is the number of symbols currently in the table).
---
--- Any concurrent calls to (the critical section in) `intern` are synchronized.
-intern :: (Textual s) => s -> Symbol
-intern text =
-  let !text' = toShortText text
-   in lookupOrInsert text'
-  where
-    lookupOrInsert text' =
-      -- SAFETY: `intern` is idempotent, so inlining and CSE is benign (and might indeed improve performance).
-      System.IO.Unsafe.unsafePerformIO $ MVar.modifyMVar (next globalSymbolTable') $ \next -> do
-        maybeWeak <- lookup text
-        case maybeWeak of
-          Just symbol -> pure (next, symbol)
-          Nothing -> insert text' next
-    insert text' next = do
-      SymbolTableMappings {symbolsToText, textToSymbols} <- IORef.readIORef (mappings globalSymbolTable')
-      let !idx = nextEmptyIndex next symbolsToText
-      let !symbol = Symbol idx
-      weakSymbol <- Weak.mkWeakPtr symbol (Just (finalizer idx))
-      let !mappings2 =
-            SymbolTableMappings
-              { symbolsToText = HashMap.insert idx text' symbolsToText,
-                textToSymbols = Map.insert text' weakSymbol textToSymbols
-              }
-      IORef.atomicWriteIORef (mappings globalSymbolTable') mappings2
-
-      let !nextFree = idx + 1
-      pure (nextFree, symbol)
-{-# INLINE intern #-}
-
-nextEmptyIndex :: Word -> HashMap Word ShortText -> Word
-nextEmptyIndex starting symbolsToText = go starting
-  where
-    go idx = case HashMap.lookup idx symbolsToText of
-      Nothing -> idx
-      _ -> go (idx + 1) -- <- Wrapping on overflow is intentional and important for correctness
-
--- | Returns a handle to the global symbol table. (Only) useful for introspection or debugging.
 globalSymbolTable :: IO GlobalSymbolTable
-globalSymbolTable =
-  globalSymbolTable'
-    -- re-introduce the IO bound which we unsafePerformIO'ed:
-    & pure
+globalSymbolTable = pure globalSymbolTable'
 
 globalSymbolTable' :: GlobalSymbolTable
-globalSymbolTable' =
-  -- SAFETY: We need all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
-  System.IO.Unsafe.unsafePerformIO $ do
-    nextRef <- MVar.newMVar 0 -- IORef.newIORef 0
-    mappingsRef <- IORef.newIORef (SymbolTableMappings Map.empty HashMap.empty)
-    return (GlobalSymbolTable nextRef mappingsRef)
-{-# NOINLINE globalSymbolTable' #-}
+globalSymbolTable' = System.IO.Unsafe.unsafePerformIO $ do
+    ref <- IORef.newIORef (SymbolTable mempty)
+    pure (GlobalSymbolTable ref)
 
--- | Returns the current size of the global symbol table. Useful for introspection or metrics.
 globalSymbolTableSize :: IO Word
 globalSymbolTableSize = do
-  table <- globalSymbolTable
-  mappings <- IORef.readIORef (mappings table)
-  let size =
-        mappings
-          & symbolsToText
-          & HashMap.size
-          & fromIntegral
-  pure size
+    table <- globalSymbolTable
+    (SymbolTable symtab) <- IORef.readIORef (symbolTableRef table)
+    let size = fromIntegral $ Map.size symtab
+    pure size
 
-finalizer :: Word -> IO ()
-finalizer idx = do
-  MVar.withMVar (next globalSymbolTable') $ \_next -> do
-    IORef.modifyIORef' (mappings globalSymbolTable') $ \SymbolTableMappings {symbolsToText, textToSymbols} ->
-      case HashMap.lookup idx symbolsToText of
-        Nothing -> error ("Duplicate finalizer called for " <> show idx <> "This should never happen") -- SymbolTableMappings {symbolsToText, textToSymbols}
-        Just text ->
-          SymbolTableMappings
-            { symbolsToText = HashMap.delete idx symbolsToText,
-              textToSymbols = Map.delete text textToSymbols
-            }
+shortTextToByteArray :: ShortText -> ByteArray
+shortTextToByteArray !text = 
+    let !(SBS ba#) = Text.Short.toShortByteString text
+    in ByteArray ba#
+
+finalizer :: ShortText -> IO ()
+finalizer key = do
+    -- putStrLn $ "Deleting key " <> (show key)
+    IORef.atomicModifyIORef' (symbolTableRef globalSymbolTable') $ \(SymbolTable symtab) ->
+        (SymbolTable (Map.delete key symtab), ())
 {-# NOINLINE finalizer #-}
