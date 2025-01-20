@@ -9,11 +9,13 @@
 -- The main advantages of Symbolize over existing symbol table implementations are:
 --
 -- - Garbage collection: Symbols which are no longer used are automatically cleaned up.
--- - `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
+-- - `Symbol`s have a small memory footprint (a pinned `ByteArray#`) unpacked by GHC.
 -- - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
 -- - Thread-safe.
--- - Efficient: Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
--- - Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
+-- - Efficient: 
+--    - `unintern` only has to follow a pointer
+--    - `lookup` reads an IOref but is free of atomic memory barries
+-- - Support for as much symbols as you have memory.
 --
 -- == Basic usage
 --
@@ -62,12 +64,9 @@
 -- Just (Symbolize.intern "hello")
 --
 -- Symbols make great keys for `Data.HashMap` and `Data.HashSet`.
--- Hashing them is a no-op and they are guaranteed to be unique:
---
--- >>> Data.Hashable.hash hello
--- 0
--- >>> fmap Data.Hashable.hash niceCheeses
--- [2,3,4]
+-- Hashing them is a no-op and they are guaranteed to be unique.
+-- _(Note that hash order changes between program runs, since
+-- the pointer address of the pinned text bytes is internally used.)_
 --
 -- For introspection, you can look at how many symbols currently exist:
 --
@@ -88,7 +87,7 @@
 -- /(Note that the exact format is subject to change.)/
 --
 -- >>> Symbolize.globalSymbolTable
--- GlobalSymbolTable { count = 5, next = 10, contents = [(0,"hello"),(1,"world"),(2,"Roquefort"),(3,"Camembert"),(4,"Brie")] }
+-- GlobalSymbolTable { contents = ["Brie","Camembert","Roquefort","hello","world"] }
 {-# LANGUAGE GHC2021 #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -170,7 +169,7 @@ instance Show Symbol where
     showsPrec p symbol = 
         let !str = unintern @String symbol
         in showParen (p > 10) $
-            showString "Symbolize.intern " . shows str
+            showString "Symbolize.intern " . shows str -- . showString (" " <> show (symbolAddrInt symbol))
 
 -- | Symbol contains by definition always an already-evaluated ByteArray#
 instance NFData Symbol where
@@ -212,22 +211,34 @@ symbolToShortText (Symbol (ByteArray ba#)) =
     & Text.Short.Unsafe.fromShortByteStringUnsafe
 
 unintern :: (Textual str) => Symbol -> str
+{-# INLINE unintern #-}
 unintern s =
     s
     & symbolToShortText
     & Textual.fromShortText
 
 intern :: (Textual str) => str -> Symbol
-intern str =
-    let
-        in System.IO.Unsafe.unsafePerformIO $ do 
-            let !text = Textual.toShortText str
-            IORef.atomicModifyIORef' (symbolTableRef globalSymbolTable') $ \symtab -> System.IO.Unsafe.unsafePerformIO $ do
-                res <- lookupCritical symtab text
-                case res of
-                    Just sym -> pure (symtab, sym)
-                    Nothing ->
-                        insert symtab text
+{-# INLINE intern #-}
+intern str = 
+    let !text = Textual.toShortText str in
+        -- SAFETY: `intern` is idempotent, so inlining and CSE is benign (and might indeed improve performance).
+        Symbolize.Accursed.accursedUnutterablePerformIO $ do
+            -- Optimization: non-atomically see if the symbol already exists:
+            maybeSym <- lookupInner text
+            case maybeSym of
+                Just sym -> pure sym
+                Nothing -> 
+                    -- If it doesn't, time to modify the table
+                    IORef.atomicModifyIORef' (symbolTableRef globalSymbolTable') $ \symtab -> 
+                        -- SAFETY: Can never float outside of the call to `atomicModifyIORef'
+                        Symbolize.Accursed.accursedUnutterablePerformIO $ do
+                        -- We re-check if the symbol exists, as another thread might have inserted it
+                        -- in-between above check and aquiring the IORef
+                        res <- lookupCritical symtab text
+                        case res of
+                            Just sym -> pure (symtab, sym)
+                            Nothing ->
+                                insert symtab text
 
 lookup :: (Textual str) => str -> IO (Maybe Symbol)
 lookup = lookupInner . Textual.toShortText
@@ -241,16 +252,18 @@ lookupCritical :: SymbolTable -> ShortText -> IO (Maybe Symbol)
 lookupCritical (SymbolTable table) text = 
     case Map.lookup text table of
         Nothing -> pure Nothing
-        Just weak -> Weak.deRefWeak weak
+        Just weak -> do
+            res <- Weak.deRefWeak weak
+            pure $ (fmap Symbol) res
 
 insert :: SymbolTable -> ShortText -> IO (SymbolTable, Symbol)
 insert (SymbolTable table) text = do
     let !ba = shortTextToByteArray text
-    let !sym = Symbol (Symbolize.Accursed.ensurePinned ba)
-    weak <- Weak.mkWeakPtr sym (Just (finalizer text))
-    pure (SymbolTable $ Map.insert text weak table, sym)
+    let !sym = Symbolize.Accursed.ensurePinned ba
+    weak <- Symbolize.Accursed.mkWeakByteArray sym (finalizer text)
+    pure (SymbolTable $ Map.insert text weak table, Symbol sym)
 
-newtype SymbolTable = SymbolTable (Map ShortText (Weak Symbol))
+newtype SymbolTable = SymbolTable (Map ShortText (Weak ByteArray))
 newtype GlobalSymbolTable = GlobalSymbolTable {symbolTableRef :: IORef SymbolTable}
 
 instance Show GlobalSymbolTable where
@@ -258,7 +271,7 @@ instance Show GlobalSymbolTable where
     show table = System.IO.Unsafe.unsafePerformIO $ do
         SymbolTable symtab <- IORef.readIORef (symbolTableRef table)
         let keys = Map.keys symtab
-        pure $ "GlobalSymbolTable { contents = " <> show keys <> "}"
+        pure $ "GlobalSymbolTable { contents = " <> show keys <> " }"
 
 globalSymbolTable :: IO GlobalSymbolTable
 globalSymbolTable = pure globalSymbolTable'
