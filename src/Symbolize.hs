@@ -130,6 +130,8 @@ import System.Mem.Weak (Weak)
 import qualified System.Mem.Weak as Weak
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 
 
 import Symbolize.Accursed
@@ -212,14 +214,14 @@ symbolToShortText (Symbol (ByteArray ba#)) =
 
 unintern :: (Textual str) => Symbol -> str
 {-# INLINE unintern #-}
-unintern s =
+unintern !s =
     s
     & symbolToShortText
     & Textual.fromShortText
 
 intern :: (Textual str) => str -> Symbol
 {-# INLINE intern #-}
-intern str = 
+intern !str = 
     let !text = Textual.toShortText str in
         -- SAFETY: `intern` is idempotent, so inlining and CSE is benign (and might indeed improve performance).
         Symbolize.Accursed.accursedUnutterablePerformIO $ do
@@ -250,28 +252,80 @@ lookupInner text = do
 
 lookupCritical :: SymbolTable -> ShortText -> IO (Maybe Symbol)
 lookupCritical (SymbolTable table) text = 
-    case Map.lookup text table of
+    case setLookup (T text) table of
         Nothing -> pure Nothing
-        Just weak -> do
+        Just (S (WeakSymbol weak)) -> do
             res <- Weak.deRefWeak weak
             pure $ (fmap Symbol) res
+        Just (T _) -> error "This should never happen; we never store T's in the symbol set"
+    where
+        setLookup elem set = 
+            set
+            & Set.lookupIndex elem
+            & fmap (\idx -> Set.elemAt idx set)
+
 
 insert :: SymbolTable -> ShortText -> IO (SymbolTable, Symbol)
 insert (SymbolTable table) text = do
     let !ba = shortTextToByteArray text
     let !sym = Symbolize.Accursed.ensurePinned ba
-    weak <- Symbolize.Accursed.mkWeakByteArray sym (finalizer text)
-    pure (SymbolTable $ Map.insert text weak table, Symbol sym)
+    weak <- Symbolize.Accursed.mkWeakByteArray sym (pure ())-- (finalizer text)
+    let weak' = S (WeakSymbol weak)
+    let table' = Set.insert weak' table
+    let idx = Set.findIndex weak' table'
+    Weak.addFinalizer sym (finalizer text idx)
+    pure (SymbolTable $ table', Symbol sym)
 
-newtype SymbolTable = SymbolTable (Map ShortText (Weak ByteArray))
+
+
+newtype WeakSymbol = WeakSymbol (Weak ByteArray)
+
+-- instance Eq WeakSymbol where
+--     a == b = 
+--         let 
+--             a' = symbolToShortText (deRefWeakSymbol a)
+--             b' = symbolToShortText (deRefWeakSymbol b)
+--         in
+--             a' == b'
+
+-- instance Ord WeakSymbol where
+--     a `compare` b = deRefWeakSymbol a `compare` deRefWeakSymbol b
+
+instance Show WeakSymbol where
+    show = show . deRefWeakSymbol
+
+data WeakSymbolOrShortText = S {-# UNPACK #-} !WeakSymbol | T {-# UNPACK #-} !ShortText
+  deriving Show
+
+instance Eq WeakSymbolOrShortText where
+    a == b = normalize a == normalize b
+
+instance Ord WeakSymbolOrShortText where
+    a `compare` b = normalize a `compare` normalize b
+
+normalize (S s) = case deRefWeakSymbol s of
+    Nothing -> Nothing
+    Just s' -> Just $ symbolToShortText s'
+normalize (T t) = Just t
+
+deRefWeakSymbol :: WeakSymbol -> Maybe Symbol
+deRefWeakSymbol (WeakSymbol weak) = 
+    case (System.IO.Unsafe.unsafePerformIO (Weak.deRefWeak weak)) of
+        Nothing -> Nothing
+        Just ba -> Just (Symbol ba)
+
+
+newtype SymbolTable = SymbolTable (Set WeakSymbolOrShortText)
+
+-- newtype SymbolTable = SymbolTable (Map ShortText (Weak ByteArray))
 newtype GlobalSymbolTable = GlobalSymbolTable {symbolTableRef :: IORef SymbolTable}
 
 instance Show GlobalSymbolTable where
     -- SAFETY: We're only reading, and do not care about performance here.
     show table = System.IO.Unsafe.unsafePerformIO $ do
         SymbolTable symtab <- IORef.readIORef (symbolTableRef table)
-        let keys = Map.keys symtab
-        pure $ "GlobalSymbolTable { contents = " <> show keys <> " }"
+        let contents = Set.toList symtab
+        pure $ "GlobalSymbolTable { contents = " <> show contents <> " }"
 
 globalSymbolTable :: IO GlobalSymbolTable
 globalSymbolTable = pure globalSymbolTable'
@@ -285,7 +339,7 @@ globalSymbolTableSize :: IO Word
 globalSymbolTableSize = do
     table <- globalSymbolTable
     (SymbolTable symtab) <- IORef.readIORef (symbolTableRef table)
-    let size = fromIntegral $ Map.size symtab
+    let size = fromIntegral $ Set.size symtab
     pure size
 
 shortTextToByteArray :: ShortText -> ByteArray
@@ -293,9 +347,9 @@ shortTextToByteArray !text =
     let !(SBS ba#) = Text.Short.toShortByteString text
     in ByteArray ba#
 
-finalizer :: ShortText -> IO ()
-finalizer key = do
+finalizer :: ShortText -> Int -> IO ()
+finalizer key idx = do
     -- putStrLn $ "Deleting key " <> (show key)
     IORef.atomicModifyIORef' (symbolTableRef globalSymbolTable') $ \(SymbolTable symtab) ->
-        (SymbolTable (Map.delete key symtab), ())
+        (SymbolTable (Set.deleteAt idx symtab), ())
 {-# NOINLINE finalizer #-}
