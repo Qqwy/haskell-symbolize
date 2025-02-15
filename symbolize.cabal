@@ -44,6 +44,7 @@ library
   exposed-modules:
       Symbolize
       Symbolize3
+      Symbolize4
   other-modules:
       Symbolize.Textual
       Symbolize.Accursed

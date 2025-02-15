@@ -58,7 +58,8 @@ insert symtab !text = do
 finalizer :: ShortText -> Int -> IO ()
 finalizer !text !symHash = do
     -- putStrLn $ "finalizer: Deleting key" <> show text
-    IORef.atomicModifyIORef' (symbolTableRef globalSymbolTable') $ \symtab ->
+    gsymtab <- globalSymbolTable
+    IORef.atomicModifyIORef' (symbolTableRef gsymtab) $ \symtab ->
         let textToPtr' = Map.delete text (textToPtr symtab)
             ptrToText' = IntMap.delete symHash (ptrToText symtab)
         in
@@ -68,7 +69,8 @@ finalizer !text !symHash = do
 lookup :: Textual str => str -> IO (Maybe Symbol)
 lookup !str = do
     let !text = Textual.toShortText str
-    symtab <- IORef.readIORef (symbolTableRef globalSymbolTable')
+    gsymtab <- globalSymbolTable
+    symtab <- IORef.readIORef (symbolTableRef gsymtab)
     lookupCritical symtab text
 
 lookupCritical :: SymbolTable -> ShortText -> IO (Maybe Symbol)
@@ -87,14 +89,19 @@ intern :: Textual str => str -> Symbol
 intern !str =
     let text = Textual.toShortText str in
     unsafePerformIO $ do
-        maybeSym <- lookup text
+        -- Short-circuit check:
+        -- Check if the symbol exists without locking the IORef
+        gsymtab <- globalSymbolTable
+        symtab <- IORef.readIORef (symbolTableRef gsymtab)
+        maybeSym <- lookupCritical symtab text
         case maybeSym of
             Just sym -> pure sym
-            Nothing ->
-                IORef.atomicModifyIORef' (symbolTableRef globalSymbolTable') $ \symtab ->
+            Nothing -> do
+                -- If it didn't exist, we lock
+                IORef.atomicModifyIORef' (symbolTableRef gsymtab) $ \symtab ->
                     unsafePerformIO $ do
                         -- We re-check if the symbol exists, as another thread might have inserted it
-                        -- in-between above check and aquiring the IORef
+                        -- in-between our short-circuit check and us aquiring the IORef lock
                         maybeSym' <- lookupCritical symtab text 
                         case maybeSym' of
                             Just sym -> pure (symtab, sym)
@@ -159,10 +166,7 @@ data SymbolTable = SymbolTable {
 newtype GlobalSymbolTable = GlobalSymbolTable {symbolTableRef :: IORef SymbolTable}
 
 globalSymbolTable :: IO GlobalSymbolTable
-globalSymbolTable = pure globalSymbolTable'
-
-globalSymbolTable' :: GlobalSymbolTable
-globalSymbolTable' = System.IO.Unsafe.unsafePerformIO $ do
+globalSymbolTable = do
     ref <- IORef.newIORef (SymbolTable mempty mempty)
     pure (GlobalSymbolTable ref)
 
