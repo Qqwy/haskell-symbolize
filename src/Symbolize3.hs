@@ -142,7 +142,8 @@ makeWeakSymbol !(Symbol (Symbol# sname#)) (IO finalizer#) =
 
 unintern :: Symbol -> ShortText
 unintern !symbol = unsafePerformIO $ do
-    symtab <- IORef.readIORef (symbolTableRef globalSymbolTable')
+    gsymtab <- globalSymbolTable
+    symtab <- IORef.readIORef (symbolTableRef gsymtab)
     let text = (ptrToText symtab) IntMap.! (symbolHash symbol)
     pure text
 
