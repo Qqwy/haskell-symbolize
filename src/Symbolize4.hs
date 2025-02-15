@@ -26,6 +26,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
+import Data.Maybe (fromMaybe)
 
 import Symbolize.Textual (Textual)
 import Symbolize.Textual qualified as Textual
@@ -53,16 +54,17 @@ data WeakSymbol where
     WeakSymbol :: {-# UNPACK #-} !WeakSymbol# -> WeakSymbol
 
 
-newtype SymbolTable = SymbolTable {unSymbolTable :: Set Symbol}
-  deriving Show
+newtype SymbolTable = SymbolTable {unSymbolTable :: (Set Symbol)}
 
-newtype GlobalSymbolTable = GlobalSymbolTable {symbolTableRef :: IORef SymbolTable}
+newtype GlobalSymbolTable = GlobalSymbolTable {symbolTableRef :: (IORef SymbolTable)}
 
 instance Show GlobalSymbolTable where
     -- SAFETY: We're only reading, and do not care about performance here.
     show table = System.IO.Unsafe.unsafePerformIO $ do
-        SymbolTable set <- IORef.readIORef (symbolTableRef table)
-        let contents = Set.toList set
+        SymbolTable symtab <- IORef.readIORef (symbolTableRef table)
+        -- set <- fromMaybe mempty <$> (Weak.deRefWeak symtab)
+        -- let contents = Set.toList set
+        let contents = Set.toList symtab
         pure $ "GlobalSymbolTable { contents = " <> show contents <> " }"
 
 
@@ -72,20 +74,30 @@ globalSymbolTable = pure globalSymbolTable'
 globalSymbolTable' :: GlobalSymbolTable
 {-# NOINLINE globalSymbolTable' #-}
 globalSymbolTable' = System.IO.Unsafe.unsafePerformIO $ do
-    ref <- IORef.newIORef (SymbolTable mempty)
+    let !set = mempty
+    -- !weak <- Weak.mkWeakPtr set Nothing
+    !ref <- IORef.newIORef (SymbolTable set)
     pure (GlobalSymbolTable ref)
+
+withSymbolTable :: SymbolTable -> (Set Symbol -> IO (Set Symbol, a)) -> IO (SymbolTable, a)
+withSymbolTable (SymbolTable set) fun = do
+    -- set <- fromMaybe mempty <$> Weak.deRefWeak weak
+    (set', a) <- fun set
+    -- weak' <- Weak.mkWeakPtr set' Nothing
+    -- pure (SymbolTable weak', a)
+    pure (SymbolTable set', a)
 
 
 symbolHash :: Symbol -> Int
 symbolHash sym = withSymbolStableName sym (\sname# -> I# (stableNameToInt# sname#))
 
-symbolEq :: Symbol -> Symbol -> Bool
-symbolEq sym1 sym2 = 
-    withSymbolStableName sym1 $ \sname1# -> 
-        withSymbolStableName sym2 $ \sname2# ->
-            case sname1# `eqStableName#` sname2# of
-                0# -> False
-                _ -> True
+-- symbolEq :: Symbol -> Symbol -> Bool
+-- symbolEq sym1 sym2 = 
+--     withSymbolStableName sym1 $ \sname1# -> 
+--         withSymbolStableName sym2 $ \sname2# ->
+--             case sname1# `eqStableName#` sname2# of
+--                 0# -> False
+--                 _ -> True
 
 
 withSymbolStableName :: Symbol -> (StableName# Symbol# -> r) -> r
@@ -113,31 +125,40 @@ intern !str =
                         Just existingSymbol -> (symtab, existingSymbol)
                         Nothing ->
                             unsafePerformIO $ do
-                                let !symtab' = SymbolTable (Set.insert newSymbol (unSymbolTable symtab))
-                                -- putStrLn $ "Inserted " <> show newSymbol <> "Into symbol table " <> show symtab'
-                                addSymbolFinalizer newSymbol (symtab') (finalizer newSymbol)
-                                pure (symtab', newSymbol)
+                                withSymbolTable symtab $ \set -> do
+                                    -- let !weak = (unSymbolTable symtab)
+                                    -- set <- fromMaybe mempty <$> deRefWeak weak
+                                    let !set' = Set.insert newSymbol set
+                                    -- symtab' <- SymbolTable <$> mkWeakPtr set' Nothing
+                                    -- putStrLn $ "Inserted " <> show newSymbol <> "Into symbol table " <> show symtab'
+                                    addSymbolFinalizer newSymbol (finalizer newSymbol)
+                                    pure (set', newSymbol)
 
-lookupCritical newSymbol (SymbolTable set) = (flip Set.elemAt set <$> Set.lookupIndex newSymbol set)
+lookupCritical newSymbol (SymbolTable set) = 
+    -- case unsafePerformIO (Weak.deRefWeak weak) of
+    --     Nothing -> Nothing
+    --     Just set ->
+            (flip Set.elemAt set <$> Set.lookupIndex newSymbol set)
 
-addSymbolFinalizer :: Symbol -> SymbolTable -> IO () -> IO ()
-addSymbolFinalizer !symbol@(Symbol sym#) !table !(IO finalizer#) = do
+addSymbolFinalizer :: Symbol -> IO () -> IO ()
+addSymbolFinalizer !symbol@(Symbol sym#)  !(IO finalizer#) = do
     primitive $ \s1 ->
-        case mkWeak# sym# table finalizer# s1 of
+        case mkWeak# sym# sym# finalizer# s1 of
             (# s2, _ #) -> (# s2, () #)
 
 finalizer :: Symbol -> IO ()
 finalizer symbol = do
     putStrLn $ "Running finalizer for symbol" <> show symbol
     (GlobalSymbolTable gsymtab) <- globalSymbolTable
-    IORef.atomicModifyIORef' gsymtab $ \(SymbolTable set) ->
-        case Set.lookupIndex symbol set of
-            Nothing -> (SymbolTable set, ())
-            Just idx -> 
-                let existingSymbol = Set.elemAt idx set in
-                case symbol == existingSymbol of
-                    False -> (SymbolTable set, ())
-                    True-> (SymbolTable (Set.deleteAt idx set), ())
+    IORef.atomicModifyIORef' gsymtab $ \symtab -> unsafePerformIO $
+        withSymbolTable symtab $ \set -> 
+            case Set.lookupIndex symbol set of
+                Nothing -> pure (set, ())
+                Just idx -> 
+                    let existingSymbol = Set.elemAt idx set in
+                    case symbol == existingSymbol of
+                        False -> pure (set, ())
+                        True-> pure ((Set.deleteAt idx set), ())
 
 unintern :: Textual str => Symbol -> str
 unintern = Textual.fromShortText . symbolToShortText
