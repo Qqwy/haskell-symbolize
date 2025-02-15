@@ -113,7 +113,7 @@ import Data.String (IsString (..))
 import Data.Text.Short (ShortText)
 import Data.Text.Short qualified as Text.Short
 import Data.Text.Short.Unsafe qualified as Text.Short.Unsafe
-import Data.Text.Display (Display (..))
+--import Data.Text.Display (Display (..))
 import Data.ByteString.Short (ShortByteString(..))
 import Data.Primitive.ByteArray (ByteArray(..), ByteArray#)
 import Data.Hashable qualified as Hashable
@@ -163,9 +163,9 @@ instance Hashable.Hashable Symbol where
     hashWithSalt = Hashable.defaultHashWithSalt
     {-# INLINE hashWithSalt #-}
 
-instance Display Symbol where
-    displayBuilder = unintern
-    {-# INLINE displayBuilder #-}
+-- instance Display Symbol where
+--     displayBuilder = unintern
+--     {-# INLINE displayBuilder #-}
 
 instance Show Symbol where
     showsPrec p symbol = 
