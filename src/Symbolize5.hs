@@ -30,6 +30,12 @@ import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Maybe (fromMaybe)
 import Control.DeepSeq (NFData(..))
+import Data.Hashable (Hashable(..))
+import Data.String (IsString(..))
+import qualified Text.Read
+import GHC.Read (Read (..))
+import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
+import Control.Applicative ((<|>))
 
 import Symbolize.Textual (Textual)
 import Symbolize.Textual qualified as Textual
@@ -44,19 +50,44 @@ data Symbol where
     Symbol :: {-# UNPACK #-} !Symbol# -> Symbol
 
 instance Show Symbol where
-    show = show . symbolToShortText
+    show symbol = "Symbolize5.intern " <> show (symbolToShortText symbol)
 
 instance Eq Symbol where
+    {-# INLINE (==) #-}
     (Symbol sym1#) == (Symbol sym2#) =
         case reallyUnsafePtrEquality# sym1# sym2# of
             0# -> False
             _ -> True
 
 instance Ord Symbol where
+    {-# INLINE compare #-}
     a `compare` b = (symbolToShortText a) `compare` (symbolToShortText b)
 
 instance NFData Symbol where
+    {-# INLINE rnf #-}
     rnf a = seq a ()
+
+instance Hashable Symbol where
+    {-# INLINE hash #-}
+    hash symbol = symbolHash symbol
+    hashWithSalt salt symbol = hashWithSalt salt (symbolHash symbol)
+
+instance IsString Symbol where
+    fromString = intern
+
+instance Read Symbol where
+  readListPrec = readListPrecDefault
+  readPrec = parens $ prec 10 $ full <|> onlyString
+    where
+      onlyString = do
+        str <- readPrec @String
+        return $ intern str
+      full = do
+        Ident "Symbolize5" <- lexP
+        Text.Read.Symbol "." <- lexP
+        Ident "intern" <- lexP
+        str <- readPrec @String
+        return $ intern str
 
 data WeakSymbol where
     WeakSymbol :: {-# UNPACK #-} !WeakSymbol# -> WeakSymbol
