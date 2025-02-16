@@ -38,15 +38,12 @@ description: |
 
 dependencies:
 - base                 >= 4.7    && < 5
-- bytestring           >= 0.12.0 && < 0.13
-- deepseq              >= 1.5.0  && < 1.6
+- text-short           >= 0.1.0  && < 0.2
+- containers           >= 0.6.0  && < 0.7
+- bytestring           >= 0.11.0 && < 0.13
+- deepseq              >= 1.4.0  && < 1.6
 - hashable             >= 1.4.0  && < 1.5
 - text                 >= 2.0    && < 2.2
-# - text-display         >= 0.0.6  && < 0.1
-- text-short           >= 0.1.0  && < 0.2
-- unordered-containers >= 0.2.0  && < 0.3
-- containers           >= 0.6.0  && < 0.7
-- primitive            >= 0.8.0 && < 0.10
 
 ghc-options:
 - -Wall
