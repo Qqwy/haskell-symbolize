@@ -132,6 +132,7 @@ import System.IO.Unsafe qualified
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault)
 import Text.Read qualified
 import Prelude hiding (lookup)
+import Control.Monad.IO.Class (MonadIO (liftIO))
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -258,8 +259,8 @@ symbolHash (Symbol sym#) =
 -- Runs concurrently with any other operation on the symbol table, without any atomic memory barriers.
 --
 -- Because the result can vary depending on the current state of the symbol table, this function is not pure.
-lookup :: (Textual str) => str -> IO (Maybe Symbol)
-lookup str = do
+lookup :: (Textual str, MonadIO m) => str -> m (Maybe Symbol)
+lookup str = liftIO $ do
   let !text = Textual.toShortText str
   GlobalSymbolTable gsymtab <- globalSymbolTable
   symtab <- IORef.readIORef gsymtab
@@ -356,8 +357,8 @@ symbolToShortText (Symbol (Symbol# ba#)) =
 -- Current implementation details (these might change even between PVP-compatible versions):
 --
 -- - A (containers) `Map` is used for mapping text -> symbol. This has O(log2(n)) lookup time, but is resistent to HashDoS attacks.
-globalSymbolTable :: IO GlobalSymbolTable
-globalSymbolTable = pure globalSymbolTable'
+globalSymbolTable :: MonadIO m => m GlobalSymbolTable
+globalSymbolTable = liftIO $ pure globalSymbolTable'
 
 globalSymbolTable' :: GlobalSymbolTable
 -- SAFETY: We need all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
@@ -368,8 +369,8 @@ globalSymbolTable' = System.IO.Unsafe.unsafePerformIO $ do
   pure (GlobalSymbolTable ref)
 
 -- | Returns the current size of the global symbol table. Useful for introspection or metrics.
-globalSymbolTableSize :: IO Word
-globalSymbolTableSize = do
+globalSymbolTableSize :: MonadIO m => m Word
+globalSymbolTableSize = liftIO $ do
   table <- globalSymbolTable
   (SymbolTable hashmap) <- IORef.readIORef (symbolTableRef table)
   pure (fromIntegral (Map.size hashmap))
