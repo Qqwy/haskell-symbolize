@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+
 -- NOTE: FlexibleInstances is needed to support `String` instance :-(
 
 module Symbolize.Textual (Textual (..)) where
@@ -11,10 +12,10 @@ import Data.Text (Text)
 import qualified Data.Text.Encoding as Text.Encoding
 import qualified Data.Text.Encoding.Error as Text.Encoding.Error
 import qualified Data.Text.Lazy as LText
-import Data.Text.Short (ShortText)
-import qualified Data.Text.Short as ShortText
 import Data.Text.Lazy.Builder (Builder)
 import qualified Data.Text.Lazy.Builder as Builder
+import Data.Text.Short (ShortText)
+import qualified Data.Text.Short as ShortText
 
 -- | Implemented by any String-like types.
 -- The symbol table uses `ShortText` for its internal storage, so any type which can be converted to it
@@ -58,7 +59,7 @@ instance Textual LText.Text where
   fromShortText = LText.fromStrict . ShortText.toText
   {-# INLINE fromShortText #-}
 
--- | 
+-- |
 -- - toShortText: O(n). Evaluates the entire builder.
 -- - fromShortText: O(1)
 instance Textual Builder where

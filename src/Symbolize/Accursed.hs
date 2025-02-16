@@ -1,11 +1,12 @@
-{-# LANGUAGE GHC2021, MagicHash, UnboxedTuples #-}
+{-# LANGUAGE GHC2021 #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE UnboxedTuples #-}
+
 module Symbolize.Accursed (accursedUnutterablePerformIO) where
 
-import GHC.IO (IO(IO))
--- import Data.Primitive.ByteArray (ByteArray(..), ByteArray#)
--- import Data.Primitive.ByteArray qualified as ByteArray
--- import GHC.Exts (realWorld#, reallyUnsafePtrEquality, isTrue#, mkWeak#)
 import GHC.Exts (realWorld#)
+import GHC.IO (IO (IO))
+
 -- import GHC.Weak (Weak(..))
 -- import Unsafe.Coerce (unsafeCoerce#)
 
@@ -15,32 +16,5 @@ import GHC.Exts (realWorld#)
 -- Full warning: https://hackage.haskell.org/package/bytestring-0.12.0.2/docs/Data-ByteString-Internal.html#v:accursedUnutterablePerformIO
 -- (This definition is also taken from there)
 accursedUnutterablePerformIO :: IO a -> a
-accursedUnutterablePerformIO (IO m) = case m realWorld# of (# _, r #)   -> r
+accursedUnutterablePerformIO (IO m) = case m realWorld# of (# _, r #) -> r
 {-# INLINE accursedUnutterablePerformIO #-}
-
-
--- -- | Do two byte arrays share the same pointer?
--- sameByteArray :: ByteArray# -> ByteArray# -> Bool
--- sameByteArray ba1 ba2 =
---     case reallyUnsafePtrEquality (unsafeCoerce# ba1 :: ()) (unsafeCoerce# ba2 :: ()) of
---       r -> isTrue# r
-
--- -- | If already pinned, returns the input unchanged.
--- -- Otherwise, creates a pinned copy
--- ensurePinned :: ByteArray -> ByteArray
--- ensurePinned ba 
---   | ByteArray.isByteArrayPinned ba = ba
---   | otherwise = accursedUnutterablePerformIO $ do
---       pinned <- ByteArray.newPinnedByteArray (ByteArray.sizeofByteArray ba)
---       ByteArray.copyByteArray pinned 0 ba 0 (ByteArray.sizeofByteArray ba)
---       ByteArray.unsafeFreezeByteArray pinned
-
-
--- -- | Make a 'Weak' pointer to an 'ByteArray'
--- --
--- -- Based on the various `mkWeak*` functions existing in `base`
--- -- that add a Weak pointer to a boxed unlifted type
--- -- such as e.g. `mkWeakMVar`.
--- mkWeakByteArray :: ByteArray -> IO () -> IO (Weak ByteArray)
--- mkWeakByteArray m@(ByteArray ba#) (IO f) = IO $ \s ->
---     case mkWeak# ba# m f s of (# s1, w #) -> (# s1, Weak w #)
