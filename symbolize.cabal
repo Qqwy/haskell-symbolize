@@ -45,6 +45,7 @@ library
       Symbolize
       Symbolize3
       Symbolize4
+      Symbolize5
   other-modules:
       Symbolize.Textual
       Symbolize.Accursed
