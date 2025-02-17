@@ -1,5 +1,5 @@
 name:                symbolize
-version:             1.0.0.0
+version:             1.0.0.1
 github:              "Qqwy/haskell-symbolize"
 license:             BSD-3-Clause
 author:              "Qqwy / Marten"
@@ -68,6 +68,10 @@ library:
   other-modules:
   - Symbolize.Accursed
   - Symbolize.SipHash
+  - Symbolize.SymbolTable
+
+tested-with:
+  GHC ==9.4.8 || ==9.6.6 || ==9.8.4 || ==9.10.1
 
 # executables:
 #   symbolize-exe:
