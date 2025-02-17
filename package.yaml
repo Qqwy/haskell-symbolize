@@ -59,7 +59,6 @@ ghc-options:
 library:
   source-dirs: src
   other-modules:
-  - Symbolize.Textual
   - Symbolize.Accursed
 
 # executables:

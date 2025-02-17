@@ -1,12 +1,16 @@
 {-# LANGUAGE GHC2021 #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
-{-# LANGUAGE LambdaCase #-}
-module Symbolize.SymbolTable where
+module Symbolize.SymbolTable 
+( insertGlobal
+, lookupGlobal
+, removeGlobal
+, GlobalSymbolTable
+, globalSymbolTable
+, globalSymbolTableSize
+) where
 import Prelude hiding (lookup)
-import Data.Function ((&))
 import Data.Foldable qualified as Foldable
-import Control.Monad (filterM)
 import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
 import GHC.Exts (ByteArray#, Weak#, mkWeak#, deRefWeak#)
@@ -17,6 +21,7 @@ import Data.IORef (IORef)
 import Data.IORef qualified as IORef
 import qualified Symbolize.Accursed
 import Data.Maybe (mapMaybe)
+import qualified System.IO.Unsafe
 
 data WeakSymbol where
     WeakSymbol# :: Weak# ByteArray# -> WeakSymbol
@@ -26,8 +31,17 @@ newtype GlobalSymbolTable = GlobalSymbolTable (IORef SymbolTable)
 
 newtype Hash = Hash {hashToInt :: Int}
 
+
+instance Show GlobalSymbolTable where
+  -- SAFETY: We're only reading, and do not care about performance here.
+  show (GlobalSymbolTable table) = System.IO.Unsafe.unsafePerformIO $ do
+    SymbolTable symtab <- IORef.readIORef table
+    let contents = foldMap aliveWeaks $ IntMap.elems symtab
+    pure $ "GlobalSymbolTable { contents = " <> show contents <> " }"
+
 insertGlobal :: ByteArray# -> IO ByteArray
-insertGlobal !ba# = do
+{-# INLINE insertGlobal #-}
+insertGlobal ba# = do
     let !key = calculateHash ba#
     let !weak =  mkWeakSymbol ba# (removeGlobal key)
     GlobalSymbolTable gsymtab <- globalSymbolTable
@@ -37,43 +51,36 @@ insertGlobal !ba# = do
             Nothing ->
                 (insert key weak table, ByteArray ba#)
 
-removeGlobal :: Hash -> IO ()
-removeGlobal !key = do
-    GlobalSymbolTable gsymtab <- globalSymbolTable
-    IORef.atomicModifyIORef' gsymtab $ \table ->
-        (remove key table, ())
-
 lookupGlobal :: ByteArray# -> IO (Maybe ByteArray)
+{-# INLINE lookupGlobal #-}
 lookupGlobal ba# = do
     GlobalSymbolTable gsymtab <- globalSymbolTable
     table <- IORef.readIORef gsymtab
     pure (lookup ba# table)
 
-
-lookup :: ByteArray# -> SymbolTable -> Maybe ByteArray
-lookup ba# (SymbolTable table) = do
-    let !key = calculateHash ba#
-    weaks <- IntMap.lookup (hashToInt key) table
-    Foldable.find (\other -> other == ByteArray ba#) (alives weaks)
-
-
--- TODO: Replace with SipHash
-calculateHash :: ByteArray# -> Hash
-calculateHash ba# = Hash $ hash (ByteArray ba#)
-
-mkWeakSymbol :: ByteArray# -> IO () -> WeakSymbol
-mkWeakSymbol ba# (IO finalizer#) = unsafePerformIO $
-    IO $ \s1 -> case mkWeak# ba# ba# finalizer# s1 of
-        (# s2, weak #) -> (# s2, WeakSymbol# weak #)
-
+removeGlobal :: Hash -> IO ()
+{-# INLINE removeGlobal #-}
+removeGlobal !key = do
+    GlobalSymbolTable gsymtab <- globalSymbolTable
+    IORef.atomicModifyIORef' gsymtab $ \table ->
+        (remove key table, ())
 
 insert :: Hash -> WeakSymbol -> SymbolTable -> SymbolTable
+{-# INLINE insert #-}
 insert key weak (SymbolTable table) =
     let
         table' = IntMap.insertWith (++) (hashToInt key) (pure weak) table
     in SymbolTable table'
 
+lookup :: ByteArray# -> SymbolTable -> Maybe ByteArray
+{-# INLINE lookup #-}
+lookup ba# (SymbolTable table) = do
+    let !key = calculateHash ba#
+    weaks <- IntMap.lookup (hashToInt key) table
+    Foldable.find (\other -> other == ByteArray ba#) (aliveWeaks weaks)
+
 remove :: Hash -> SymbolTable -> SymbolTable
+{-# INLINE remove #-}
 remove (Hash key) (SymbolTable table) = 
     let table' = IntMap.update removeTombstones key table
     in SymbolTable table'
@@ -87,6 +94,17 @@ remove (Hash key) (SymbolTable table) =
                 Nothing -> False
                 Just _ -> True
 
+-- TODO: Replace with SipHash
+calculateHash :: ByteArray# -> Hash
+{-# INLINE calculateHash #-}
+calculateHash ba# = Hash $ hash (ByteArray ba#)
+
+mkWeakSymbol :: ByteArray# -> IO () -> WeakSymbol
+{-# INLINE mkWeakSymbol #-}
+mkWeakSymbol ba# (IO finalizer#) = unsafePerformIO $
+    IO $ \s1 -> case mkWeak# ba# ba# finalizer# s1 of
+        (# s2, weak #) -> (# s2, WeakSymbol# weak #)
+
 deRefWeakSymbol :: WeakSymbol -> Maybe ByteArray
 {-# INLINE deRefWeakSymbol #-}
 deRefWeakSymbol (WeakSymbol# w) = Symbolize.Accursed.accursedUnutterablePerformIO $ IO $ \s ->
@@ -95,8 +113,9 @@ deRefWeakSymbol (WeakSymbol# w) = Symbolize.Accursed.accursedUnutterablePerformI
       0# -> (# s1, Nothing #)
       _ -> (# s1, Just (ByteArray p) #)
 
-alives :: [WeakSymbol] -> [ByteArray]
-alives = mapMaybe deRefWeakSymbol
+aliveWeaks :: [WeakSymbol] -> [ByteArray]
+{-# INLINE aliveWeaks #-}
+aliveWeaks = mapMaybe deRefWeakSymbol
 
 globalSymbolTable :: IO GlobalSymbolTable
 globalSymbolTable = pure globalSymbolTable'
@@ -107,3 +126,10 @@ globalSymbolTable' :: GlobalSymbolTable
 globalSymbolTable' = unsafePerformIO $ do
   !ref <- IORef.newIORef (SymbolTable mempty)
   pure (GlobalSymbolTable ref)
+
+globalSymbolTableSize :: IO Word
+globalSymbolTableSize = do
+    GlobalSymbolTable gsymtab <- globalSymbolTable
+    SymbolTable table <- IORef.readIORef gsymtab
+    let size = fromIntegral (IntMap.size table)
+    pure size

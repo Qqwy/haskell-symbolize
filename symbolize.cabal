@@ -44,8 +44,9 @@ library
   exposed-modules:
       Symbolize
       Symbolize.SymbolTable
-  other-modules:
       Symbolize.Textual
+      Symbolize6
+  other-modules:
       Symbolize.Accursed
   hs-source-dirs:
       src
