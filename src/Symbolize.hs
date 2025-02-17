@@ -7,9 +7,28 @@
 -- Symbols, also known as Atoms or Interned Strings, are a common technique
 -- to reduce memory usage and improve performance when using many small strings.
 --
--- By storing a single copy of each encountered string in a global table and giving out pointers to the stored keys,
--- it is possible to compare strings for equality in constant time, instead of linear (in string size) time.
--- Furthermore, by using `StableName`, hashing of Symbols also takes constant-time, so `Symbol`s make great hashmap keys!.
+-- A Symbol represents a string (any `Textual`, so String, Text, ShortText, ByteString, ShortByteString, etc.)
+--
+-- Just like `ShortText`, `ShortByteString` and `ByteArray`, a `Symbol` has an optimized memory representation,
+-- directly wrapping a primitive `ByteArray#`.
+--
+-- Furthermore, a global symbol table keeps track of which values currently exist, ensuring we always deduplicate symbols.
+-- This therefore allows us to:
+-- - Check for equality between symbols in constant-time (using pointer equality)
+-- - Calculate the hash in constant-time (using `StableName`)
+-- - Keep the memory footprint of repeatedly-seen strings low.
+--
+-- This is very useful if you're frequently comparing strings
+-- and the same strings might come up many times.
+-- It also makes Symbol a great candidate for a key in e.g. a `HashMap` or `HashSet`.
+--
+-- The global symbol table is implemented using weak pointers,
+-- which means that unused symbols will be garbage collected.
+-- As such, you do not need to be concerned about memory leaks
+-- (as is the case with many other symbol table implementations).
+--
+-- Symbols are considered 'the same' regardless of whether they originate
+-- from a `String`, (lazy or strict, normal or short) `Data.Text`, (lazy or strict, normal or short) `Data.ByteString` etc.
 --
 -- The main advantages of Symbolize over other symbol table implementations are:
 --
