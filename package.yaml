@@ -1,5 +1,5 @@
 name:                symbolize
-version:             1.0.0.2
+version:             1.0.0.3
 github:              "Qqwy/haskell-symbolize"
 license:             BSD-3-Clause
 author:              "Qqwy / Marten"
@@ -28,6 +28,7 @@ description: |
 
   Furthermore, a global symbol table keeps track of which values currently exist, ensuring we always deduplicate symbols.
   This therefore allows us to:
+
   - Check for equality between symbols in constant-time (using pointer equality)
   - Calculate the hash in constant-time (using `StableName`)
   - Keep the memory footprint of repeatedly-seen strings low.

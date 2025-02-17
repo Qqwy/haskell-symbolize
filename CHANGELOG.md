@@ -8,6 +8,10 @@ and this project adheres to the
 
 ## Unreleased
 
+## 1.0.0.3
+
+- Minor documentation improvements
+
 ## 1.0.0.2
 
 - Minor documentation improvements
