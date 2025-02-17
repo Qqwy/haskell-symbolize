@@ -1,5 +1,5 @@
 name:                symbolize
-version:             1.0.0.1
+version:             1.0.0.2
 github:              "Qqwy/haskell-symbolize"
 license:             BSD-3-Clause
 author:              "Qqwy / Marten"
@@ -40,18 +40,6 @@ description: |
   which means that unused symbols will be garbage collected.
   As such, you do not need to be concerned about memory leaks
   (as is the case with many other symbol table implementations).
-
-  The main advantages of Symbolize over other symbol table implementations are:
-
-  - Garbage collection: Symbols which are no longer used are automatically cleaned up.
-  - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString`, `ShortText`, `ShortByteString`, etc.
-  - Great memory usage:
-      - `Symbol`s are simply a (lifted) wrapper around a `ByteArray#`, which is nicely unpacked by GHC.
-      - The symbol table is an `IntMap` that contains weak pointers to these same `ByteArray#`s and their associated `StableName#`s
-  - Great performance:
-      - `unintern` is a simple pointer-dereference
-      - calls to `lookup` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
-  - Thread-safe
 
   Please see the full README below or on GitHub at <https://github.com/Qqwy/haskell-symbolize#readme>
 
