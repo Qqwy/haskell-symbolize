@@ -1,8 +1,10 @@
 {-# LANGUAGE FlexibleInstances #-}
+
 -- NOTE: FlexibleInstances is needed to support `String` instance :-(
 
 module Symbolize.Textual (Textual (..)) where
 
+import Data.Array.Byte (ByteArray (ByteArray))
 import Data.ByteString (ByteString)
 import Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as ShortByteString
@@ -11,10 +13,10 @@ import Data.Text (Text)
 import qualified Data.Text.Encoding as Text.Encoding
 import qualified Data.Text.Encoding.Error as Text.Encoding.Error
 import qualified Data.Text.Lazy as LText
-import Data.Text.Short (ShortText)
-import qualified Data.Text.Short as ShortText
 import Data.Text.Lazy.Builder (Builder)
 import qualified Data.Text.Lazy.Builder as Builder
+import Data.Text.Short (ShortText)
+import qualified Data.Text.Short as ShortText
 
 -- | Implemented by any String-like types.
 -- The symbol table uses `ShortText` for its internal storage, so any type which can be converted to it
@@ -58,7 +60,7 @@ instance Textual LText.Text where
   fromShortText = LText.fromStrict . ShortText.toText
   {-# INLINE fromShortText #-}
 
--- | 
+-- |
 -- - toShortText: O(n). Evaluates the entire builder.
 -- - fromShortText: O(1)
 instance Textual Builder where
@@ -93,3 +95,12 @@ instance Textual ByteString where
 
   fromShortText = ShortText.toByteString
   {-# INLINE fromShortText #-}
+
+-- |
+-- - toShortText: O(n). Turns invalid UTF-8 into the Unicode replacement character.
+-- - fromShortText: O(0) no-op
+instance Textual ByteArray where
+  toShortText (ByteArray ba) = toShortText (ShortByteString.SBS ba)
+  fromShortText short =
+    let !(ShortByteString.SBS ba) = fromShortText short
+     in ByteArray ba
