@@ -15,12 +15,15 @@ it is possible to compare strings for equality in constant time, instead of line
 
 The main advantages of Symbolize over existing symbol table implementations are:
 
-- Garbage collection: Symbols which are no longer used are automatically cleaned up.
-- `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
-- Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
-- Thread-safe.
-- Efficient: Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
-- Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
+ - Garbage collection: Symbols which are no longer used are automatically cleaned up.
+ - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString`, `ShortText`, `ShortByteString`, etc.
+ - Great memory usage:
+    - `Symbol`s are simply a (lifted) wrapper around a `ByteArray#`, which is nicely unpacked by GHC.
+    - The symbol table is an `IntMap` that contains weak pointers to these same `ByteArray#`s and their associated `StableName#`s
+ - Great performance:
+   - `unintern` is a simple pointer-dereference
+   - calls to `lookup` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
+ - Thread-safe
 
 ## Basic usage
 
