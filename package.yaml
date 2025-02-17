@@ -1,10 +1,10 @@
 name:                symbolize
-version:             0.1.0.3
+version:             1.0.0.0
 github:              "Qqwy/haskell-symbolize"
 license:             BSD-3-Clause
 author:              "Qqwy / Marten"
 maintainer:          "qqwy@gmx.com"
-copyright:           "2023 Marten Wijnja"
+copyright:           "2023-2025 Marten Wijnja"
 
 extra-source-files:
 - README.md
@@ -21,17 +21,21 @@ description: |
   Symbols, also known as Atoms or Interned Strings, are a common technique
   to reduce memory usage and improve performance when using many small strings.
 
-  By storing a single copy of each encountered string in a global table and giving out indexes to that table,
+  By storing a single copy of each encountered string in a global table and giving out pointers to the stored keys,
   it is possible to compare strings for equality in constant time, instead of linear (in string size) time.
-
-  The main advantages of Symbolize over existing symbol table implementations are:
-
+  Furthermore, by using `StableName`, hashing of Symbols also takes constant-time, so `Symbol`s make great hashmap keys!.
+ 
+  The main advantages of Symbolize over other symbol table implementations are:
+ 
   - Garbage collection: Symbols which are no longer used are automatically cleaned up.
-  - `Symbol`s have a memory footprint of exactly 1 `Word` and are nicely unpacked by GHC.
-  - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString` etc.
-  - Thread-safe.
-  - Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
-  - Support for a maximum of 2^64 symbols at the same time (you'll probably run out of memory before that point).
+  - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString`, `ShortText`, `ShortByteString`, etc.
+  - Great memory usage:
+     - `Symbol`s are simply a (lifted) wrapper around a `ByteArray#`, which is nicely unpacked by GHC.
+     - The symbol table is an `IntMap` that contains weak pointers to these same `ByteArray#`s and their associated `StableName#`s
+  - Great performance:
+    - `unintern` is a simple pointer-dereference
+    - calls to `lookup` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
+  - Thread-safe
 
   Please see the full README below or on GitHub at <https://github.com/Qqwy/haskell-symbolize#readme>
 
@@ -44,7 +48,7 @@ dependencies:
 - deepseq              >= 1.4.0  && < 1.6
 - hashable             >= 1.4.0  && < 1.5
 - text                 >= 2.0    && < 2.2
-- random
+- random               >= 1.2    && < 2
 
 ghc-options:
 - -Wall
