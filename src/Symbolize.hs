@@ -19,7 +19,7 @@
 -- - `Symbol`s have a memory footprint of exactly 1 Word and are nicely unpacked by GHC.
 -- - Support for any `Textual` type, including `String`, (strict and lazy) `Data.Text`, (strict and lazy) `Data.ByteString`, `ShortText`, `ShortByteString`, etc.
 -- - Thread-safe.
--- - Efficient: Calls to `lookup` and `unintern` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
+-- - Efficient: `unintern` is a simple pointer-dereference, and calls to `lookup` are free of atomic memory barriers (and never have to wait on a concurrent thread running `intern`)
 --
 -- == Basic usage
 --
@@ -42,7 +42,7 @@
 -- >>> niceCheeses
 -- [Symbolize.intern "Roquefort",Symbolize.intern "Camembert",Symbolize.intern "Brie"]
 --
--- And if you are using OverloadedStrings, you can use the `IsString` instance to intern constants:
+-- And if you are using `OverloadedStrings`, you can use the `IsString` instance to intern constants:
 --
 -- >>> hello2 = ("hello" :: Symbol)
 -- >>> hello2
@@ -68,7 +68,7 @@
 -- Just (Symbolize.intern "hello")
 --
 -- Symbols make great keys for `Data.HashMap` and `Data.HashSet`.
--- Hashing them is a no-op and they are guaranteed to be unique:
+-- Hashing them takes constant-time and they are guaranteed to be unique:
 --
 -- >>> Data.Hashable.hash hello
 -- 1

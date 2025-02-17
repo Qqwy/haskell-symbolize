@@ -43,6 +43,7 @@ source-repository head
 library
   exposed-modules:
       Symbolize
+      Symbolize.SymbolTable
   other-modules:
       Symbolize.Textual
       Symbolize.Accursed
