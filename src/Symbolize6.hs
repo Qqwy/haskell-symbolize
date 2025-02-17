@@ -20,7 +20,6 @@ Symbol(..)
 , sameSymbol#
 , sameSymbol##
 , hashSymbol#
-, hashSymbol##
 , compareSymbol#
 )
  where
@@ -28,7 +27,7 @@ import Prelude hiding (lookup)
 import Data.Function ((&))
 import Control.Applicative ((<|>))
 import Data.Array.Byte (ByteArray(ByteArray))
-import GHC.Exts (ByteArray#, sameByteArray#, makeStableName#, stableNameToInt#, Int#, realWorld#)
+import GHC.Exts (ByteArray#, sameByteArray#, Int#)
 import Symbolize.Textual (Textual)
 import Symbolize.Textual qualified as Textual
 import Symbolize.SymbolTable qualified as SymbolTable
@@ -36,7 +35,6 @@ import Data.ByteString.Short (ShortByteString(SBS))
 import qualified Data.Text.Short as Text.Short
 import qualified Symbolize.Accursed as Accursed
 import qualified Data.Text.Short.Unsafe as Text.Short.Unsafe
-import GHC.Int (Int(I#))
 import Data.String (IsString(fromString))
 import Text.Read (Lexeme (Ident), lexP, parens, prec, readListPrecDefault, Read(..))
 import Text.Read qualified
@@ -145,12 +143,12 @@ sameSymbol## :: Symbol# -> Symbol# -> Int#
 sameSymbol## (Symbol# a) (Symbol# b) = sameByteArray# a b
 
 hashSymbol# :: Symbol# -> Int
-hashSymbol# sym# = I# (hashSymbol## sym#)
+hashSymbol# (Symbol# ba#) = Accursed.accursedUnutterablePerformIO (Accursed.byteArrayStableNameHash# ba#)
 
-hashSymbol## :: Symbol# -> Int#
-hashSymbol## sym# =
-    case makeStableName# sym# realWorld# of
-        (# _, sname# #) -> stableNameToInt# sname#
+-- hashSymbol## :: Symbol# -> Int#
+-- hashSymbol## (Symbol# ba#) =
+--     case makeStableName# ba# realWorld# of
+--         (# _, sname# #) -> stableNameToInt# sname#
 
 compareSymbol# :: Symbol# -> Symbol# -> Ordering
 compareSymbol# (Symbol# a) (Symbol# b) = Accursed.utf8CompareByteArray# a b 

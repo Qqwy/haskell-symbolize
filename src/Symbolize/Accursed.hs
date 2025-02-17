@@ -2,10 +2,14 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
 
-module Symbolize.Accursed (accursedUnutterablePerformIO, utf8CompareByteArray#) where
+module Symbolize.Accursed (accursedUnutterablePerformIO, utf8CompareByteArray#, shortTextFromBA, byteArrayStableNameHash#) where
 
-import GHC.Exts (realWorld#, ByteArray#, sizeofByteArray#, isTrue#, (>=#), andI#, word8ToWord#, indexWord8Array#, (+#), gtWord#, ltWord#)
+import GHC.Exts (realWorld#, ByteArray#, sizeofByteArray#, isTrue#, (>=#), andI#, word8ToWord#, indexWord8Array#, (+#), gtWord#, ltWord#, makeStableName#, stableNameToInt#, Int (I#))
 import GHC.IO (IO (IO))
+import Data.Array.Byte (ByteArray(ByteArray))
+import Data.Text.Short (ShortText)
+import Data.ByteString.Short (ShortByteString(SBS))
+import qualified Data.Text.Short.Unsafe as Text.Short.Unsafe
 
 -- This \"function\" has a superficial similarity to 'System.IO.Unsafe.unsafePerformIO' but
 -- it is in fact a malevolent agent of chaos.
@@ -15,7 +19,6 @@ import GHC.IO (IO (IO))
 accursedUnutterablePerformIO :: IO a -> a
 accursedUnutterablePerformIO (IO m) = case m realWorld# of (# _, r #) -> r
 {-# INLINE accursedUnutterablePerformIO #-}
-
 
 -- Lifted from `base`'s internal `GHC.Encoding.UTF8` module.
 -- Since that module could change in any minor version bump,
@@ -54,3 +57,15 @@ utf8CompareByteArray# a1 a2 = go 0# 0#
                      _   | isTrue# (b1_1 `gtWord#` b2_1) -> GT
                          | isTrue# (b1_1 `ltWord#` b2_1) -> LT
                          | otherwise                     -> go (off1 +# 1#) (off2 +# 1#)
+
+shortTextFromBA :: ByteArray -> ShortText
+{-# INLINE shortTextFromBA #-}
+shortTextFromBA (ByteArray ba#) = Text.Short.Unsafe.fromShortByteStringUnsafe (SBS ba#)
+
+
+byteArrayStableNameHash# :: ByteArray# -> IO Int
+{-# INLINE byteArrayStableNameHash# #-}
+byteArrayStableNameHash# ba# = IO $ \s1 ->
+    case makeStableName# ba# s1 of
+        (# s2, sname# #) -> (# s2, I# (stableNameToInt# sname#) #)
+

@@ -13,7 +13,7 @@ import Prelude hiding (lookup)
 import Data.Foldable qualified as Foldable
 import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
-import GHC.Exts (ByteArray#, Weak#, mkWeak#, deRefWeak#)
+import GHC.Exts (ByteArray#, Weak#, mkWeak#, deRefWeak#, StableName#, makeStableName#)
 import GHC.IO (IO(IO), unsafePerformIO)
 import Data.Array.Byte (ByteArray(ByteArray))
 import Data.Hashable (Hashable(hash))
@@ -22,9 +22,21 @@ import Data.IORef qualified as IORef
 import qualified Symbolize.Accursed
 import Data.Maybe (mapMaybe)
 import qualified System.IO.Unsafe
+import qualified Symbolize.Accursed as Accursed
 
+-- Inside the WeakSymbol
+-- we keep:
+-- - A weak pointer to the underlying ByteArray#.
+--   This weak pointer will be invalidated (turn into a 'tombstone')
+--   when the final instance of this symbol is GC'd
+-- - A `StableName` for the same ByteArray# 
+--   This ensures we have a stable hash even in the presence of the ByteArray#
+--   being moved around by the GC.
+--   We never read it after construction,
+--   but by keeping it around until the WeakSymbol is removed by the finalizer,
+--   we ensure that future calls to `makeStableName` return the same hash.
 data WeakSymbol where
-    WeakSymbol# :: Weak# ByteArray# -> WeakSymbol
+    WeakSymbol# :: Weak# ByteArray# -> StableName# ByteArray# -> WeakSymbol
 
 newtype SymbolTable = SymbolTable (IntMap [WeakSymbol])
 newtype GlobalSymbolTable = GlobalSymbolTable (IORef SymbolTable)
@@ -36,7 +48,7 @@ instance Show GlobalSymbolTable where
   -- SAFETY: We're only reading, and do not care about performance here.
   show (GlobalSymbolTable table) = System.IO.Unsafe.unsafePerformIO $ do
     SymbolTable symtab <- IORef.readIORef table
-    let contents = foldMap aliveWeaks $ IntMap.elems symtab
+    let contents = map Accursed.shortTextFromBA $ foldMap aliveWeaks $ IntMap.elems symtab
     pure $ "GlobalSymbolTable { contents = " <> show contents <> " }"
 
 insertGlobal :: ByteArray# -> IO ByteArray
@@ -103,11 +115,14 @@ mkWeakSymbol :: ByteArray# -> IO () -> WeakSymbol
 {-# INLINE mkWeakSymbol #-}
 mkWeakSymbol ba# (IO finalizer#) = unsafePerformIO $
     IO $ \s1 -> case mkWeak# ba# ba# finalizer# s1 of
-        (# s2, weak #) -> (# s2, WeakSymbol# weak #)
+        (# s2, weak# #) -> 
+            case makeStableName# ba# s2 of
+                (# s3, sname# #) ->
+                    (# s3, WeakSymbol# weak# sname# #)
 
 deRefWeakSymbol :: WeakSymbol -> Maybe ByteArray
 {-# INLINE deRefWeakSymbol #-}
-deRefWeakSymbol (WeakSymbol# w) = Symbolize.Accursed.accursedUnutterablePerformIO $ IO $ \s ->
+deRefWeakSymbol (WeakSymbol# w _sn) = Symbolize.Accursed.accursedUnutterablePerformIO $ IO $ \s ->
   case deRefWeak# w s of
     (# s1, flag, p #) -> case flag of
       0# -> (# s1, Nothing #)
@@ -115,7 +130,7 @@ deRefWeakSymbol (WeakSymbol# w) = Symbolize.Accursed.accursedUnutterablePerformI
 
 aliveWeaks :: [WeakSymbol] -> [ByteArray]
 {-# INLINE aliveWeaks #-}
-aliveWeaks = mapMaybe deRefWeakSymbol
+aliveWeaks = mapMaybe $ \weak -> deRefWeakSymbol weak
 
 globalSymbolTable :: IO GlobalSymbolTable
 globalSymbolTable = pure globalSymbolTable'
