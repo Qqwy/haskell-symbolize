@@ -5,7 +5,7 @@ cabal-version: 2.2
 -- see: https://github.com/sol/hpack
 
 name:           symbolize
-version:        1.0.0.4
+version:        1.0.1.0
 synopsis:       Efficient global Symbol table, with Garbage Collection.
 description:    Symbols, also known as Atoms or Interned Strings, are a common technique
                 to reduce memory usage and improve performance when using many small strings:
@@ -70,6 +70,7 @@ library
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       base >=4.7 && <5
+    , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
     , containers >=0.6.0 && <0.7
     , deepseq >=1.4.0 && <1.6
@@ -97,6 +98,7 @@ test-suite symbolize-doctest
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
     , containers >=0.6.0 && <0.7
     , deepseq >=1.4.0 && <1.6
@@ -130,6 +132,7 @@ test-suite symbolize-test
   build-depends:
       async
     , base >=4.7 && <5
+    , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
     , containers >=0.6.0 && <0.7
     , deepseq >=1.4.0 && <1.6

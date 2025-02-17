@@ -5,7 +5,7 @@
 -- | Implementation of a global Symbol Table, with garbage collection.
 --
 -- Symbols, also known as Atoms or Interned Strings, are a common technique
--- to reduce memory usage and improve performance when using many small strings.
+-- to reduce memory usage and improve performance when using many small strings:
 --
 -- A Symbol represents a string (any `Textual`, so String, Text, ShortText, ByteString, ShortByteString, etc.)
 --
@@ -164,6 +164,9 @@ import Symbolize.Textual qualified as Textual
 import Text.Read (Lexeme (Ident), Read (..), lexP, parens, prec, readListPrecDefault)
 import Text.Read qualified
 import Prelude hiding (lookup)
+import Data.Data qualified
+import Data.Binary qualified
+import Data.Text.Short (ShortText)
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -392,3 +395,29 @@ textualToBA# !str =
 textualFromBA# :: (Textual str) => ByteArray# -> str
 {-# INLINE textualFromBA# #-}
 textualFromBA# ba# = Textual.fromShortText (Text.Short.Unsafe.fromShortByteStringUnsafe (SBS ba#))
+
+-- | This `Data` instance follows the same implementation as the one for 
+-- `Text` and `ShortText`: It pretends `Symbol` is a a collection holding a `[Char]`.
+--
+-- @since 1.0.1.0
+instance Data.Data.Data Symbolize.Symbol where
+  gfoldl f z txt = z (Symbolize.intern @String) `f` Symbolize.unintern @String txt
+  toConstr _ = internConstr
+  gunfold k z c = case Data.Data.constrIndex c of
+    1 -> k (z (Symbolize.intern @String))
+    _ -> error "gunfold"
+  dataTypeOf _ = symbolDataType
+
+symbolDataType :: Data.Data.DataType
+symbolDataType = Data.Data.mkDataType "Symbolize.Symbol" [internConstr]
+
+internConstr :: Data.Data.Constr
+internConstr = Data.Data.mkConstr symbolDataType "intern" [] Data.Data.Prefix
+
+-- | Uses the `ShortByteString` instance of `Textual` under the hood;
+-- invalid UTF-8 is replaced by the Unicode replacement character.
+--
+--  @since 1.0.1.0
+instance Data.Binary.Binary Symbol where
+  put = Data.Binary.put . Symbolize.unintern @ShortByteString
+  get = Symbolize.intern @ShortByteString <$> Data.Binary.get

@@ -8,6 +8,11 @@ and this project adheres to the
 
 ## Unreleased
 
+## 1.0.1.0
+
+- Add `Data.Data` instance
+- Add `Data.Binary` instance
+
 ## 1.0.0.4
 
 - Minor documentation improvements
