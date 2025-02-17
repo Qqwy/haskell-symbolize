@@ -140,5 +140,5 @@ For deeper introspection, you can look at the Show instance of the global symbol
 
 ```haskell
 >>> Symbolize.globalSymbolTable
-GlobalSymbolTable { count = 5, next = 10, contents = [(0,"hello"),(1,"world"),(2,"Roquefort"),(3,"Camembert"),(4,"Brie")] }
+GlobalSymbolTable { size = 5, symbols = ["Brie","Camembert","Roquefort","hello","world"] }
 ```
