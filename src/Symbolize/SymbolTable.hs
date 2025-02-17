@@ -1,6 +1,7 @@
 {-# LANGUAGE GHC2021 #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# OPTIONS_HADDOCK hide, prune #-}
 module Symbolize.SymbolTable 
 ( insertGlobal
 , lookupGlobal
@@ -16,13 +17,16 @@ import Data.IntMap.Strict qualified as IntMap
 import GHC.Exts (ByteArray#, Weak#, mkWeak#, deRefWeak#, StableName#, makeStableName#)
 import GHC.IO (IO(IO), unsafePerformIO)
 import Data.Array.Byte (ByteArray(ByteArray))
-import Data.Hashable (Hashable(hash))
 import Data.IORef (IORef)
 import Data.IORef qualified as IORef
 import qualified Symbolize.Accursed
 import Data.Maybe (mapMaybe)
 import qualified System.IO.Unsafe
 import qualified Symbolize.Accursed as Accursed
+import Symbolize.SipHash qualified as SipHash
+import System.Random.Stateful qualified as Random (globalStdGen, Uniform (uniformM))
+import qualified Data.List
+import Control.Monad.IO.Class (MonadIO (liftIO))
 
 -- Inside the WeakSymbol
 -- we keep:
@@ -39,26 +43,41 @@ data WeakSymbol where
     WeakSymbol# :: Weak# ByteArray# -> StableName# ByteArray# -> WeakSymbol
 
 newtype SymbolTable = SymbolTable (IntMap [WeakSymbol])
-newtype GlobalSymbolTable = GlobalSymbolTable (IORef SymbolTable)
+
+-- | The global Symbol Table, containing a mapping between each symbol's textual representation and its deduplicated pointer.
+--
+-- You cannot manipulate the table itself directly,
+-- but you can use `globalSymbolTable` to get a handle to it and use its `Show` instance for introspection.
+--
+-- `globalSymbolTableSize` can similarly be used to get the current size of the table.
+--
+-- Current implementation details (these might change even between PVP-compatible versions):
+--
+-- - An `IntMap` is used for mapping $(SipHash text) -> weak symbol$. 
+--   Such an IntMap has O(min(n, 64)) lookup time.
+-- - Since SipHash is used as hashing algorithm and the key that is used 
+--   is randomized on global table initialization,
+--   the table is resistent to HashDoS attacks.
+data GlobalSymbolTable = GlobalSymbolTable (IORef SymbolTable) SipHash.SipKey
 
 newtype Hash = Hash {hashToInt :: Int}
 
-
+-- | What exactly this `Show` instance prints might change between PVP-compatible versions
 instance Show GlobalSymbolTable where
   -- SAFETY: We're only reading, and do not care about performance here.
-  show (GlobalSymbolTable table) = System.IO.Unsafe.unsafePerformIO $ do
+  show (GlobalSymbolTable table _) = System.IO.Unsafe.unsafePerformIO $ do
     SymbolTable symtab <- IORef.readIORef table
-    let contents = map Accursed.shortTextFromBA $ foldMap aliveWeaks $ IntMap.elems symtab
-    pure $ "GlobalSymbolTable { contents = " <> show contents <> " }"
+    let contents = Data.List.sort $ map Accursed.shortTextFromBA $ foldMap aliveWeaks $ IntMap.elems symtab
+    pure $ "GlobalSymbolTable { size = " <> show (length contents) <> ", symbols = " <> show contents <> " }"
 
 insertGlobal :: ByteArray# -> IO ByteArray
 {-# INLINE insertGlobal #-}
 insertGlobal ba# = do
-    let !key = calculateHash ba#
+    GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
+    let !key = calculateHash sipkey ba#
     let !weak =  mkWeakSymbol ba# (removeGlobal key)
-    GlobalSymbolTable gsymtab <- globalSymbolTable
     IORef.atomicModifyIORef' gsymtab $ \table ->
-        case lookup ba# table of
+        case lookup ba# sipkey table of
             Just ba -> (table, ba)
             Nothing ->
                 (insert key weak table, ByteArray ba#)
@@ -66,14 +85,14 @@ insertGlobal ba# = do
 lookupGlobal :: ByteArray# -> IO (Maybe ByteArray)
 {-# INLINE lookupGlobal #-}
 lookupGlobal ba# = do
-    GlobalSymbolTable gsymtab <- globalSymbolTable
+    GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
     table <- IORef.readIORef gsymtab
-    pure (lookup ba# table)
+    pure (lookup ba# sipkey table)
 
 removeGlobal :: Hash -> IO ()
 {-# INLINE removeGlobal #-}
 removeGlobal !key = do
-    GlobalSymbolTable gsymtab <- globalSymbolTable
+    GlobalSymbolTable gsymtab _ <- globalSymbolTable
     IORef.atomicModifyIORef' gsymtab $ \table ->
         (remove key table, ())
 
@@ -84,10 +103,10 @@ insert key weak (SymbolTable table) =
         table' = IntMap.insertWith (++) (hashToInt key) (pure weak) table
     in SymbolTable table'
 
-lookup :: ByteArray# -> SymbolTable -> Maybe ByteArray
+lookup :: ByteArray# -> SipHash.SipKey -> SymbolTable -> Maybe ByteArray
 {-# INLINE lookup #-}
-lookup ba# (SymbolTable table) = do
-    let !key = calculateHash ba#
+lookup ba# sipkey (SymbolTable table) = do
+    let !key = calculateHash sipkey ba#
     weaks <- IntMap.lookup (hashToInt key) table
     Foldable.find (\other -> other == ByteArray ba#) (aliveWeaks weaks)
 
@@ -107,9 +126,11 @@ remove (Hash key) (SymbolTable table) =
                 Just _ -> True
 
 -- TODO: Replace with SipHash
-calculateHash :: ByteArray# -> Hash
+calculateHash :: SipHash.SipKey -> ByteArray# -> Hash
 {-# INLINE calculateHash #-}
-calculateHash ba# = Hash $ hash (ByteArray ba#)
+calculateHash sipkey ba# = 
+    let (SipHash.SipHash word) = SipHash.hash sipkey (ByteArray ba#)
+    in Hash (fromIntegral word)
 
 mkWeakSymbol :: ByteArray# -> IO () -> WeakSymbol
 {-# INLINE mkWeakSymbol #-}
@@ -132,19 +153,24 @@ aliveWeaks :: [WeakSymbol] -> [ByteArray]
 {-# INLINE aliveWeaks #-}
 aliveWeaks = mapMaybe $ \weak -> deRefWeakSymbol weak
 
-globalSymbolTable :: IO GlobalSymbolTable
-globalSymbolTable = pure globalSymbolTable'
+-- | Get a handle to the `GlobalSymbolTable`
+-- 
+-- This can be used for pretty-printing using its `Show` instance
+globalSymbolTable :: MonadIO m => m GlobalSymbolTable
+globalSymbolTable = liftIO $ pure globalSymbolTable'
 
 globalSymbolTable' :: GlobalSymbolTable
 -- SAFETY: We need all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
 {-# NOINLINE globalSymbolTable' #-}
 globalSymbolTable' = unsafePerformIO $ do
   !ref <- IORef.newIORef (SymbolTable mempty)
-  pure (GlobalSymbolTable ref)
+  !sipkey <- Random.uniformM Random.globalStdGen
+  pure (GlobalSymbolTable ref sipkey)
 
+-- | Returns the current size of the global symbol table. Useful for introspection or metrics.
 globalSymbolTableSize :: IO Word
 globalSymbolTableSize = do
-    GlobalSymbolTable gsymtab <- globalSymbolTable
+    GlobalSymbolTable gsymtab _ <- globalSymbolTable
     SymbolTable table <- IORef.readIORef gsymtab
     let size = fromIntegral (IntMap.size table)
     pure size

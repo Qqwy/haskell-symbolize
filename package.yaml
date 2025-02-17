@@ -44,6 +44,7 @@ dependencies:
 - deepseq              >= 1.4.0  && < 1.6
 - hashable             >= 1.4.0  && < 1.5
 - text                 >= 2.0    && < 2.2
+- random
 
 ghc-options:
 - -Wall
@@ -60,6 +61,7 @@ library:
   source-dirs: src
   other-modules:
   - Symbolize.Accursed
+  - Symbolize.SipHash
 
 # executables:
 #   symbolize-exe:

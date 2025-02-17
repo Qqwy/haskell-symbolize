@@ -1,10 +1,10 @@
 {-# LANGUAGE GHC2021 #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# OPTIONS_HADDOCK hide, prune #-}
+module Symbolize.Accursed (accursedUnutterablePerformIO, utf8CompareByteArray#, shortTextFromBA, byteArrayStableNameHash##) where
 
-module Symbolize.Accursed (accursedUnutterablePerformIO, utf8CompareByteArray#, shortTextFromBA, byteArrayStableNameHash#) where
-
-import GHC.Exts (realWorld#, ByteArray#, sizeofByteArray#, isTrue#, (>=#), andI#, word8ToWord#, indexWord8Array#, (+#), gtWord#, ltWord#, makeStableName#, stableNameToInt#, Int (I#))
+import GHC.Exts (realWorld#, ByteArray#, sizeofByteArray#, isTrue#, (>=#), andI#, word8ToWord#, indexWord8Array#, (+#), gtWord#, ltWord#, makeStableName#, stableNameToInt#, Int#)
 import GHC.IO (IO (IO))
 import Data.Array.Byte (ByteArray(ByteArray))
 import Data.Text.Short (ShortText)
@@ -17,8 +17,8 @@ import qualified Data.Text.Short.Unsafe as Text.Short.Unsafe
 -- Full warning: https://hackage.haskell.org/package/bytestring-0.12.0.2/docs/Data-ByteString-Internal.html#v:accursedUnutterablePerformIO
 -- (This definition is also taken from there)
 accursedUnutterablePerformIO :: IO a -> a
-accursedUnutterablePerformIO (IO m) = case m realWorld# of (# _, r #) -> r
 {-# INLINE accursedUnutterablePerformIO #-}
+accursedUnutterablePerformIO (IO m) = case m realWorld# of (# _, r #) -> r
 
 -- Lifted from `base`'s internal `GHC.Encoding.UTF8` module.
 -- Since that module could change in any minor version bump,
@@ -27,6 +27,7 @@ accursedUnutterablePerformIO (IO m) = case m realWorld# of (# _, r #) -> r
 -- This special comparison is necessary since
 -- normal comparison of `ByteArray`s is non-lexicographic.
 utf8CompareByteArray# :: ByteArray# -> ByteArray# -> Ordering
+{-# INLINE utf8CompareByteArray# #-}
 utf8CompareByteArray# a1 a2 = go 0# 0#
    -- UTF-8 has the property that sorting by bytes values also sorts by
    -- code-points.
@@ -58,14 +59,16 @@ utf8CompareByteArray# a1 a2 = go 0# 0#
                          | isTrue# (b1_1 `ltWord#` b2_1) -> LT
                          | otherwise                     -> go (off1 +# 1#) (off2 +# 1#)
 
+-- Helper function to go from ByteArray to ShortText.
+-- Does *not* check whether it is valid UTF-8!
 shortTextFromBA :: ByteArray -> ShortText
 {-# INLINE shortTextFromBA #-}
 shortTextFromBA (ByteArray ba#) = Text.Short.Unsafe.fromShortByteStringUnsafe (SBS ba#)
 
-
-byteArrayStableNameHash# :: ByteArray# -> IO Int
-{-# INLINE byteArrayStableNameHash# #-}
-byteArrayStableNameHash# ba# = IO $ \s1 ->
-    case makeStableName# ba# s1 of
-        (# s2, sname# #) -> (# s2, I# (stableNameToInt# sname#) #)
-
+-- Calculate the stable name for an unlifted ByteArray#,
+-- and immediately calculate its hash
+byteArrayStableNameHash## :: ByteArray# -> Int#
+{-# INLINE byteArrayStableNameHash## #-}
+byteArrayStableNameHash##  ba# =
+    case makeStableName# ba# realWorld# of
+        (# _, sname# #) -> stableNameToInt# sname#

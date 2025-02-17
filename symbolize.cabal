@@ -45,9 +45,10 @@ library
       Symbolize
       Symbolize.SymbolTable
       Symbolize.Textual
-      Symbolize6
+      SymbolizeOld
   other-modules:
       Symbolize.Accursed
+      Symbolize.SipHash
   hs-source-dirs:
       src
   default-extensions:
@@ -63,6 +64,7 @@ library
     , containers >=0.6.0 && <0.7
     , deepseq >=1.4.0 && <1.6
     , hashable >=1.4.0 && <1.5
+    , random
     , text >=2.0 && <2.2
     , text-short >=0.1.0 && <0.2
   default-language: Haskell2010
@@ -90,6 +92,7 @@ test-suite symbolize-doctest
     , deepseq >=1.4.0 && <1.6
     , doctest-parallel
     , hashable >=1.4.0 && <1.5
+    , random
     , symbolize
     , text >=2.0 && <2.2
     , text-short >=0.1.0 && <0.2
@@ -122,6 +125,7 @@ test-suite symbolize-test
     , deepseq >=1.4.0 && <1.6
     , hashable >=1.4.0 && <1.5
     , hedgehog
+    , random
     , symbolize
     , tasty
     , tasty-golden
