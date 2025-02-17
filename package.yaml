@@ -70,6 +70,9 @@ library:
   - Symbolize.SipHash
   - Symbolize.SymbolTable
 
+tested-with:
+  GHC ==9.4.8 || ==9.6.6 || ==9.8.4 || ==9.10.1
+
 # executables:
 #   symbolize-exe:
 #     main:                Main.hs

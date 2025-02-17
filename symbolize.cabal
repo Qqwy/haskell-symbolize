@@ -5,7 +5,7 @@ cabal-version: 2.2
 -- see: https://github.com/sol/hpack
 
 name:           symbolize
-version:        1.0.0.0
+version:        1.0.0.1
 synopsis:       Efficient global Symbol table, with Garbage Collection.
 description:    Symbols, also known as Atoms or Interned Strings, are a common technique
                 to reduce memory usage and improve performance when using many small strings.
@@ -36,6 +36,8 @@ copyright:      2023-2025 Marten Wijnja
 license:        BSD-3-Clause
 license-file:   LICENSE
 build-type:     Simple
+tested-with:
+    GHC ==9.4.8 || ==9.6.6 || ==9.8.4 || ==9.10.1
 extra-source-files:
     README.md
     CHANGELOG.md
@@ -47,11 +49,11 @@ source-repository head
 library
   exposed-modules:
       Symbolize
-      Symbolize.SymbolTable
       Symbolize.Textual
   other-modules:
       Symbolize.Accursed
       Symbolize.SipHash
+      Symbolize.SymbolTable
   hs-source-dirs:
       src
   default-extensions:
