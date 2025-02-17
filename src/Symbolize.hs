@@ -275,6 +275,8 @@ intern# !str = intern## (textualToBA# str)
 intern## :: ByteArray# -> Symbol#
 {-# INLINE intern## #-}
 intern## ba# =
+  -- SAFETY: We're actually happy with let-floating/combining
+  -- since the result is 'outwardly pure' and doing less work is better!
   let !(ByteArray ba2#) = Accursed.accursedUnutterablePerformIO (SymbolTable.insertGlobal ba#)
    in Symbol# ba2#
 

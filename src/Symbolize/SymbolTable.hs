@@ -136,7 +136,13 @@ calculateHash sipkey ba# =
 
 mkWeakSymbol :: ByteArray# -> IO () -> WeakSymbol
 {-# INLINE mkWeakSymbol #-}
-mkWeakSymbol ba# (IO finalizer#) = unsafePerformIO $
+mkWeakSymbol ba# (IO finalizer#) = 
+    -- SAFETY: This should even be safe
+    -- in the prescence of inlining, CSE and full laziness
+    --
+    -- because the result is outwardly pure
+    -- and the finalizer we use is idempotent
+    Symbolize.Accursed.accursedUnutterablePerformIO $
   IO $ \s1 -> case mkWeak# ba# ba# finalizer# s1 of
     (# s2, weak# #) ->
       case makeStableName# ba# s2 of
@@ -145,7 +151,10 @@ mkWeakSymbol ba# (IO finalizer#) = unsafePerformIO $
 
 deRefWeakSymbol :: WeakSymbol -> Maybe ByteArray
 {-# INLINE deRefWeakSymbol #-}
-deRefWeakSymbol (WeakSymbol# w _sn) = Symbolize.Accursed.accursedUnutterablePerformIO $ IO $ \s ->
+deRefWeakSymbol (WeakSymbol# w _sn) = 
+    -- SAFETY: This should even be safe
+    -- in the prescence of inlining, CSE and full laziness;
+    Symbolize.Accursed.accursedUnutterablePerformIO $ IO $ \s ->
   case deRefWeak# w s of
     (# s1, flag, p #) -> case flag of
       0# -> (# s1, Nothing #)
