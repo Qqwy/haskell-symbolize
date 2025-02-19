@@ -14,6 +14,7 @@
 --
 -- Furthermore, a global symbol table keeps track of which values currently exist, ensuring we always deduplicate symbols.
 -- This therefore allows us to:
+--
 -- - Check for equality between symbols in constant-time (using pointer equality)
 -- - Calculate the hash in constant-time (using `StableName`)
 -- - Keep the memory footprint of repeatedly-seen strings low.
@@ -257,7 +258,7 @@ instance Read Symbol where
         return $ intern str
 
 -- | The contents inside a `Symbol` are always guaranteed to be evaluated,
--- so this only forces the outernmost constructor using `seq`.
+-- so this only forces the outermost constructor using `seq`.
 instance NFData Symbol where
   {-# INLINE rnf #-}
   rnf a = seq a ()
@@ -265,7 +266,7 @@ instance NFData Symbol where
 -- |
 -- Hashing a `Symbol` is very fast:
 --
--- `hash` takes O(1) and results in zero collissions, as `StableName`s are used.
+-- `hash` takes O(1) and results in zero collisions, as `StableName`s are used.
 --
 -- `hashWithSalt` takes O(1) time; just as long as hashWithSalt-ing any other `Int`.
 instance Hashable Symbol where
@@ -366,14 +367,14 @@ sameSymbol## (Symbol# a) (Symbol# b) = sameByteArray# a b
 
 -- | Hash an unlifted `Symbol#`
 --
--- Takes O(1) and results in zero collissions, as `StableName`s are used.
+-- Takes O(1) and results in zero collisions, as `StableName`s are used.
 hashSymbol# :: Symbol# -> Int
 {-# INLINE hashSymbol# #-}
 hashSymbol# sym# = I# (hashSymbol## sym#)
 
 -- | Hash an unlifted `Symbol#`, returning an unlifted `Int#`
 --
--- Takes O(1) and results in zero collissions, as `StableName`s are used.
+-- Takes O(1) and results in zero collisions, as `StableName`s are used.
 hashSymbol## :: Symbol# -> Int#
 {-# INLINE hashSymbol## #-}
 hashSymbol## (Symbol# ba#) = Accursed.byteArrayStableNameHash## ba#
