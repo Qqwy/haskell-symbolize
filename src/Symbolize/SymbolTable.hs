@@ -78,7 +78,13 @@ insertGlobal :: ByteArray# -> IO ByteArray
 insertGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
   let !key = calculateHash sipkey ba#
-  let !weak = mkWeakSymbol ba# (removeGlobal key)
+  -- SAFETY: If the table IORef contested, 
+  -- this might trigger `weak` creation for the same bytestring from multiple threads
+  -- at the same time.
+  -- But finalization is idempotent, and only when a thread finally wins the Compare-and-Swap
+  -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
+  -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
+  !weak <- mkWeakSymbol ba# (removeGlobal key)
   IORef.atomicModifyIORef' gsymtab $ \table ->
     case lookup ba# sipkey table of
       Just ba -> (table, ba)
@@ -134,7 +140,7 @@ calculateHash sipkey ba# =
   let (SipHash.SipHash word) = SipHash.hash sipkey (ByteArray ba#)
    in Hash (fromIntegral word)
 
-mkWeakSymbol :: ByteArray# -> IO () -> WeakSymbol
+mkWeakSymbol :: ByteArray# -> IO () -> IO WeakSymbol
 {-# INLINE mkWeakSymbol #-}
 mkWeakSymbol ba# (IO finalizer#) = 
     -- SAFETY: This should even be safe
@@ -142,7 +148,6 @@ mkWeakSymbol ba# (IO finalizer#) =
     --
     -- because the result is outwardly pure
     -- and the finalizer we use is idempotent
-    Symbolize.Accursed.accursedUnutterablePerformIO $
   IO $ \s1 -> case mkWeak# ba# ba# finalizer# s1 of
     (# s2, weak# #) ->
       case makeStableName# ba# s2 of

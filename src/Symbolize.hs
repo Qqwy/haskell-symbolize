@@ -123,6 +123,7 @@ module Symbolize
   ( -- * Symbol
     Symbol (..),
     intern,
+    internUnsafe,
     unintern,
     lookup,
 
@@ -134,6 +135,7 @@ module Symbolize
     -- * manipulate unlifted Symbols directly
     Symbol#,
     intern#,
+    internUnsafe#,
     intern##,
     unintern#,
     unintern##,
@@ -166,7 +168,6 @@ import Text.Read qualified
 import Prelude hiding (lookup)
 import Data.Data qualified
 import Data.Binary qualified
-import Data.Text.Short (ShortText)
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -293,10 +294,28 @@ intern# :: (Textual str) => str -> Symbol#
 {-# INLINE intern# #-}
 intern# !str = intern## (textualToBA# str)
 
--- | Version of `intern` that directly works on an unlifted `ByteArray#` and returns an unlifted `Symbol#`
+
+-- | Like `intern`, but skips any potential UTF-8 validation
+internUnsafe :: (Textual str) => str -> Symbol
+{-# INLINE internUnsafe #-}
+internUnsafe !str = Symbol (internUnsafe# str)
+
+-- | Like `intern#`, but skips any potential UTF-8 validation
+internUnsafe# :: (Textual str) => str -> Symbol#
+{-# INLINE internUnsafe# #-}
+internUnsafe# !str = intern## (textualToBAUnsafe# str)
+
+{-# DEPRECATED intern## "Renamed to `internUnsafe##`" #-}
 intern## :: ByteArray# -> Symbol#
 {-# INLINE intern## #-}
-intern## ba# =
+intern## = internUnsafe##
+
+-- | Version of `intern`/`internUnsafe` that directly works on an unlifted `ByteArray#` and returns an unlifted `Symbol#`
+--
+-- Does not do any checking for UTF-8 validity on the `ByteArray#` beforehand.
+internUnsafe## :: ByteArray# -> Symbol#
+{-# INLINE internUnsafe## #-}
+internUnsafe## ba# =
   -- SAFETY: We're actually happy with let-floating/combining
   -- since the result is 'outwardly pure' and doing less work is better!
   let !(ByteArray ba2#) = Accursed.accursedUnutterablePerformIO (SymbolTable.insertGlobal ba#)
@@ -390,6 +409,12 @@ textualToBA# :: (Textual str) => str -> ByteArray#
 {-# INLINE textualToBA# #-}
 textualToBA# !str =
   let !(SBS ba#) = Text.Short.toShortByteString (Textual.toShortText str)
+   in ba#
+
+textualToBAUnsafe# :: (Textual str) => str -> ByteArray#
+{-# INLINE textualToBAUnsafe# #-}
+textualToBAUnsafe# !str =
+  let !(SBS ba#) = Text.Short.toShortByteString (Textual.toShortTextUnsafe str)
    in ba#
 
 textualFromBA# :: (Textual str) => ByteArray# -> str
