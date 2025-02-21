@@ -8,6 +8,12 @@ and this project adheres to the
 
 ## Unreleased
 
+## 1.0.2.0
+
+- Adds `Textual.toShortTextUnsafe` and related `internUnsafe` and `internUnsafe#`; these skip UTF-8 validity checks. Very useful when working with trusted serialized data.
+  - rename `intern##` to `internUnsafe##` (the old name is marked as deprecated.)
+- Cleans up `mkWeakSymbol` to be slightly less sketchy in the presence of `accursedUnutterablePerformIO`; thanks @fatho!
+
 ## 1.0.1.0
 
 - Add `Data.Data` instance
