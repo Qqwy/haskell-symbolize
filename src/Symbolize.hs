@@ -168,6 +168,7 @@ import Text.Read qualified
 import Prelude hiding (lookup)
 import Data.Data qualified
 import Data.Binary qualified
+import System.IO.Unsafe (unsafePerformIO)
 
 -- | A string-like type with O(1) equality and comparison.
 --
@@ -318,7 +319,7 @@ internUnsafe## :: ByteArray# -> Symbol#
 internUnsafe## ba# =
   -- SAFETY: We're actually happy with let-floating/combining
   -- since the result is 'outwardly pure' and doing less work is better!
-  let !(ByteArray ba2#) = Accursed.accursedUnutterablePerformIO (SymbolTable.insertGlobal ba#)
+  let !(ByteArray ba2#) = unsafePerformIO (SymbolTable.insertGlobal ba#)
    in Symbol# ba2#
 
 -- | Looks up a symbol in the global symbol table.

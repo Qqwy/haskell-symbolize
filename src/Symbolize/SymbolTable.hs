@@ -24,7 +24,6 @@ import Data.List qualified
 import Data.Maybe (mapMaybe)
 import GHC.Exts (ByteArray#, StableName#, Weak#, deRefWeak#, makeStableName#, mkWeak#)
 import GHC.IO (IO (IO), unsafePerformIO)
-import Symbolize.Accursed qualified
 import Symbolize.Accursed qualified as Accursed
 import Symbolize.SipHash qualified as SipHash
 import System.IO.Unsafe qualified
@@ -159,7 +158,7 @@ deRefWeakSymbol :: WeakSymbol -> Maybe ByteArray
 deRefWeakSymbol (WeakSymbol# w _sn) = 
     -- SAFETY: This should even be safe
     -- in the prescence of inlining, CSE and full laziness;
-    Symbolize.Accursed.accursedUnutterablePerformIO $ IO $ \s ->
+    unsafePerformIO $ IO $ \s ->
   case deRefWeak# w s of
     (# s1, flag, p #) -> case flag of
       0# -> (# s1, Nothing #)
