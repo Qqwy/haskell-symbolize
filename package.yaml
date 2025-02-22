@@ -49,9 +49,9 @@ dependencies:
 # Core functionality:
 - base                 >= 4.7    && < 5
 - deepseq              >= 1.4.0  && < 1.6
-- hashable             >= 1.4.0  && < 1.5
+- hashable             >= 1.4.0  && < 1.6
 - random               >= 1.2    && < 2
-- containers           >= 0.6.0  && < 0.7
+- containers           >= 0.6.0  && < 0.8
 # Conversions to/from commonly-used string formats:
 - text-short           >= 0.1.0  && < 0.2
 - bytestring           >= 0.11.0 && < 0.13

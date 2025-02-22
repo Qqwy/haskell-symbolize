@@ -72,9 +72,9 @@ library
       base >=4.7 && <5
     , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
-    , containers >=0.6.0 && <0.7
+    , containers >=0.6.0 && <0.8
     , deepseq >=1.4.0 && <1.6
-    , hashable >=1.4.0 && <1.5
+    , hashable >=1.4.0 && <1.6
     , random >=1.2 && <2
     , text >=2.0 && <2.2
     , text-short >=0.1.0 && <0.2
@@ -100,10 +100,10 @@ test-suite symbolize-doctest
       base >=4.7 && <5
     , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
-    , containers >=0.6.0 && <0.7
+    , containers >=0.6.0 && <0.8
     , deepseq >=1.4.0 && <1.6
     , doctest-parallel
-    , hashable >=1.4.0 && <1.5
+    , hashable >=1.4.0 && <1.6
     , random >=1.2 && <2
     , symbolize
     , text >=2.0 && <2.2
@@ -134,9 +134,9 @@ test-suite symbolize-test
     , base >=4.7 && <5
     , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
-    , containers >=0.6.0 && <0.7
+    , containers >=0.6.0 && <0.8
     , deepseq >=1.4.0 && <1.6
-    , hashable >=1.4.0 && <1.5
+    , hashable >=1.4.0 && <1.6
     , hedgehog
     , random >=1.2 && <2
     , symbolize
