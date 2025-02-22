@@ -5,7 +5,7 @@ cabal-version: 2.2
 -- see: https://github.com/sol/hpack
 
 name:           symbolize
-version:        1.0.2.0
+version:        1.0.2.1
 synopsis:       Efficient global Symbol table, with Garbage Collection.
 description:    Symbols, also known as Atoms or Interned Strings, are a common technique
                 to reduce memory usage and improve performance when using many small strings:
