@@ -86,12 +86,12 @@ insertGlobal ba# = do
   -- But finalization is idempotent, and only when a thread finally wins the Compare-and-Swap
   -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
   -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
-  !weak <- mkWeakSymbol ba# (removeGlobal hash)
   IORef.atomicModifyIORef' gsymtab $ \table ->
     case lookup ba# hash table of
       Just ba -> (table, ba)
       Nothing ->
-        (insert hash weak table, ByteArray ba#)
+        let !weak = Accursed.accursedUnutterablePerformIO (mkWeakSymbol ba# (removeGlobal hash))
+        in (insert hash weak table, ByteArray ba#)
 
 lookupGlobal :: ByteArray# -> IO (Maybe ByteArray)
 {-# INLINE lookupGlobal #-}
