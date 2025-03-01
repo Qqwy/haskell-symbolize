@@ -92,8 +92,8 @@ tested-with:
 
 tests:
   symbolize-test:
-    main:                Suite.hs
     source-dirs:         test/suite
+    main:                Suite.hs
     ghc-options:
     - -threaded
     - -rtsopts
@@ -118,6 +118,19 @@ tests:
     dependencies:
     - symbolize
     - doctest-parallel
+
+benchmarks: 
+  symbolize-bench:
+    source-dirs: benchmarks
+    main: SymbolizeBench.hs
+    build-depends:
+      - symbolize
+      - tasty-bench
+    mixins:
+      tasty-bench (Test.Tasty.Bench as Criterion, Test.Tasty.Bench as Criterion.Main, Test.Tasty.Bench as Gauge, Test.Tasty.Bench as Gauge.Main)
+    ghc-options:
+    - -with-rtsopts=-A32m
+    - -fproc-alignment=64
 
 default-extensions:
 - BangPatterns
