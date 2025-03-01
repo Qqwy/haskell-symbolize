@@ -52,7 +52,8 @@ dependencies:
 - hashable             >= 1.4.0  && < 1.6
 - random               >= 1.2    && < 2
 # - containers           >= 0.6.0  && < 0.8
-- hashtables           >=1.3     && < 2
+- vector-hashtables    >=0.1     && < 0.2
+- vector
 # Conversions to/from commonly-used string formats:
 - text-short           >= 0.1.0  && < 0.2
 - bytestring           >= 0.11.0 && < 0.13

@@ -19,8 +19,11 @@ import Data.Array.Byte (ByteArray (ByteArray))
 import Data.Foldable qualified as Foldable
 -- import Data.IORef (IORef)
 -- import Data.IORef qualified as IORef
-import Data.HashTable.IO (CuckooHashTable)
-import Data.HashTable.IO qualified as HashTable
+import qualified Data.Vector.Mutable as VM
+import qualified Data.Vector.Unboxed.Mutable  as UM
+import Data.Vector.Hashtables qualified as HashTable
+-- import Data.HashTable.IO (CuckooHashTable)
+-- import Data.HashTable.IO qualified as HashTable
 import Data.List qualified
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.List.NonEmpty qualified as NonEmpty
@@ -49,7 +52,7 @@ import Control.Concurrent.MVar qualified as MVar
 data WeakSymbol where
   WeakSymbol# :: Weak# ByteArray# -> StableName# ByteArray# -> WeakSymbol
 
-newtype SymbolTable = SymbolTable (CuckooHashTable Int (NonEmpty WeakSymbol))
+newtype SymbolTable = SymbolTable (HashTable.Dictionary (HashTable.PrimState IO) UM.MVector Int VM.MVector (NonEmpty WeakSymbol))
 
 -- | The global Symbol Table, containing a mapping between each symbol's textual representation and its deduplicated pointer.
 --
@@ -111,10 +114,11 @@ removeGlobal !key = do
 
 insert :: Hash -> WeakSymbol -> SymbolTable -> IO ()
 {-# INLINE insert #-}
-insert key weak (SymbolTable table) = do
-  HashTable.mutate table (hashToInt key) $ \case
-    Nothing -> (Just (pure weak), ())
-    Just a -> (Just (NonEmpty.cons weak a), ())
+insert key weak (SymbolTable table) = HashTable.alter table insertOrConcat (hashToInt key)
+  where 
+    insertOrConcat = \case
+      Nothing -> Just (pure weak)
+      Just a -> Just (NonEmpty.cons weak a)
 
 lookup :: ByteArray# -> SipHash.SipKey -> SymbolTable -> IO (Maybe ByteArray)
 {-# INLINE lookup #-}
@@ -128,7 +132,7 @@ lookup ba# sipkey (SymbolTable table) = do
 
 remove :: Hash -> SymbolTable -> IO ()
 {-# INLINE remove #-}
-remove (Hash key) (SymbolTable table) = HashTable.mutate table key (\weaks -> (weaks >>= removeTombstones, ()))
+remove (Hash key) (SymbolTable table) = HashTable.alter table (\weaks -> (weaks >>= removeTombstones)) key
   where
     removeTombstones = NonEmpty.nonEmpty . NonEmpty.filter isNoTombstone
     isNoTombstone weak =
@@ -181,7 +185,7 @@ globalSymbolTable' :: GlobalSymbolTable
 -- SAFETY: We need all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
 {-# NOINLINE globalSymbolTable' #-}
 globalSymbolTable' = unsafePerformIO $ do
-  !table <- HashTable.new
+  !table <- HashTable.initialize 256
   !ref <- MVar.newMVar (SymbolTable table)
   !sipkey <- Random.uniformM Random.globalStdGen
   pure (GlobalSymbolTable ref sipkey)
