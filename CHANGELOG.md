@@ -8,6 +8,9 @@ and this project adheres to the
 
 ## Unreleased
 
+## 1.0.2.4
+
+- Fix too eager creation of weak pointers, resulting in many needless allocations. This greatly reduces memory pressure and improves speed when inserting many symbols in a short amount of time! 
 - Only calculate the SipHash hash of an incoming text _once_ when inserting. (c.f. [#8](https://github.com/Qqwy/haskell-symbolize/issues/8))
 
 ## 1.0.2.3
