@@ -79,19 +79,24 @@ insertGlobal :: ByteArray# -> IO ByteArray
 {-# INLINE insertGlobal #-}
 insertGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
+  -- Optimization: Look up without doing a CAS first
+  table <- IORef.readIORef gsymtab
   let !key = calculateHash sipkey ba#
-  -- SAFETY: If the table IORef contested, 
-  -- this might trigger `weak` creation for the same bytestring from multiple threads
-  -- at the same time.
-  -- But finalization is idempotent, and only when a thread finally wins the Compare-and-Swap
-  -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
-  -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
-  !weak <- mkWeakSymbol ba# (removeGlobal key)
-  IORef.atomicModifyIORef' gsymtab $ \table ->
-    case lookup ba# sipkey table of
-      Just ba -> (table, ba)
-      Nothing ->
-        (insert key weak table, ByteArray ba#)
+  case lookup ba# sipkey table of
+    Just ba -> pure ba
+    Nothing -> do
+      -- SAFETY: If the table IORef contested, 
+      -- this might trigger `weak` creation for the same bytestring from multiple threads
+      -- at the same time.
+      -- But finalization is idempotent, and only when a thread finally wins the Compare-and-Swap
+      -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
+      -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
+      !weak <- mkWeakSymbol ba# (removeGlobal key)
+      IORef.atomicModifyIORef' gsymtab $ \table ->
+        case lookup ba# sipkey table of
+          Just ba -> (table, ba)
+          Nothing ->
+            (insert key weak table, ByteArray ba#)
 
 lookupGlobal :: ByteArray# -> IO (Maybe ByteArray)
 {-# INLINE lookupGlobal #-}
