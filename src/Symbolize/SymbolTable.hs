@@ -80,9 +80,10 @@ insertGlobal :: ByteArray# -> IO ByteArray
 insertGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
   -- Optimization: Look up without doing a CAS first
-  table <- IORef.readIORef gsymtab
+  -- If we can find anything, great!
+  readTable <- IORef.readIORef gsymtab
   let !key = calculateHash sipkey ba#
-  case lookup ba# sipkey table of
+  case lookup ba# sipkey readTable of
     Just ba -> pure ba
     Nothing -> do
       -- SAFETY: If the table IORef contested, 
