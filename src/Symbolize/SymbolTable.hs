@@ -21,11 +21,9 @@ import qualified Data.Vector.Mutable as VM
 import qualified Data.Vector.Unboxed.Mutable  as UM
 import Data.Vector.Hashtables qualified as HashTable
 import Data.List qualified
--- import Data.List.NonEmpty (NonEmpty(..))
--- import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (mapMaybe)
-import GHC.Exts (ByteArray#, StableName#, Weak#, deRefWeak#, makeStableName#, mkWeak#)
-import GHC.IO (IO (IO), unsafePerformIO)
+import GHC.Exts (ByteArray#)
+import GHC.IO (unsafePerformIO)
 import Symbolize.Accursed qualified as Accursed
 import Symbolize.SipHash qualified as SipHash
 import System.IO.Unsafe qualified
@@ -33,40 +31,10 @@ import System.Random.Stateful qualified as Random (Uniform (uniformM), globalStd
 import Prelude hiding (lookup)
 import Control.Concurrent (MVar)
 import Control.Concurrent.MVar qualified as MVar
-
--- Inside the WeakSymbol
--- we keep:
--- - A weak pointer to the underlying ByteArray#.
---   This weak pointer will be invalidated (turn into a 'tombstone')
---   when the final instance of this symbol is GC'd
--- - A `StableName` for the same ByteArray#
---   This ensures we have a stable hash even in the presence of the ByteArray#
---   being moved around by the GC.
---   We never read it after construction,
---   but by keeping it around until the WeakSymbol is removed by the finalizer,
---   we ensure that future calls to `makeStableName` return the same hash.
-data WeakSymbol where
-  WeakSymbol# :: Weak# ByteArray# -> StableName# ByteArray# -> WeakSymbol
-
--- | A monomorphised version of `Data.List.NonEmpty`
--- which allows its head `WeakSymbol` to be UNPACKed into it.
--- Since we expect collisions to be _very_ rare,
--- this skips the intermediate allocation almost always.
-data NonEmptyWeakSymbol where
-  (:|) :: {-# UNPACK #-} !WeakSymbol -> ![WeakSymbol] -> NonEmptyWeakSymbol
-
-nonEmptyToList :: NonEmptyWeakSymbol -> [WeakSymbol]
-nonEmptyToList (a :| as) = a : as
-
-nonEmptyFromList :: [WeakSymbol] -> Maybe NonEmptyWeakSymbol
-nonEmptyFromList [] = Nothing
-nonEmptyFromList (a : as) = Just (a :| as)
-
-singletonNonEmptyWeakSymbol :: WeakSymbol -> NonEmptyWeakSymbol
-singletonNonEmptyWeakSymbol a = a :| []
-
-consNonEmptyWeakSymbol :: WeakSymbol -> NonEmptyWeakSymbol -> NonEmptyWeakSymbol
-consNonEmptyWeakSymbol y (x :| xs) = y :| (x : xs)
+import Symbolize.WeakSymbol (WeakSymbol)
+import Symbolize.WeakSymbol qualified as WeakSymbol
+import Symbolize.NonEmptyWeakSymbol (NonEmptyWeakSymbol)
+import Symbolize.NonEmptyWeakSymbol qualified as NonEmptyWeakSymbol
 
 newtype SymbolTable = SymbolTable (HashTable.Dictionary (HashTable.PrimState IO) UM.MVector Int VM.MVector NonEmptyWeakSymbol)
 
@@ -112,7 +80,7 @@ insertGlobal ba# = do
     case res of
       Just ba -> pure ba
       Nothing -> do
-        !weak <- mkWeakSymbol ba# (removeGlobal hash)
+        !weak <- WeakSymbol.new ba# (removeGlobal hash)
         insert hash weak table
         pure (ByteArray ba#)
 
@@ -134,8 +102,8 @@ insert :: Hash -> WeakSymbol -> SymbolTable -> IO ()
 insert key weak (SymbolTable table) = HashTable.alter table insertOrConcat (hashToInt key)
   where
     insertOrConcat = \case
-      Nothing -> Just (singletonNonEmptyWeakSymbol weak)
-      Just weaks -> Just (consNonEmptyWeakSymbol weak weaks)
+      Nothing -> Just (NonEmptyWeakSymbol.singleton weak)
+      Just weaks -> Just (NonEmptyWeakSymbol.cons weak weaks)
 
 lookup :: ByteArray# -> Hash -> SymbolTable -> IO (Maybe ByteArray)
 {-# INLINE lookup #-}
@@ -150,9 +118,9 @@ remove :: Hash -> SymbolTable -> IO ()
 {-# INLINE remove #-}
 remove (Hash key) (SymbolTable table) = HashTable.alter table (>>= removeTombstones) key
   where
-    removeTombstones = nonEmptyFromList . filter isNoTombstone . nonEmptyToList
+    removeTombstones = NonEmptyWeakSymbol.nonEmpty . filter isNoTombstone . NonEmptyWeakSymbol.toList
     isNoTombstone weak =
-      case deRefWeakSymbol weak of
+      case WeakSymbol.deref weak of
         Nothing -> False
         Just _ -> True
 
@@ -162,34 +130,9 @@ calculateHash sipkey ba# =
   let (SipHash.SipHash word) = SipHash.hash sipkey (ByteArray ba#)
    in Hash (fromIntegral word)
 
-mkWeakSymbol :: ByteArray# -> IO () -> IO WeakSymbol
-{-# INLINE mkWeakSymbol #-}
-mkWeakSymbol ba# (IO finalizer#) =
-    -- SAFETY: This should even be safe
-    -- in the presence of inlining, CSE and full laziness
-    --
-    -- because the result is outwardly pure
-    -- and the finalizer we use is idempotent
-  IO $ \s1 -> case mkWeak# ba# ba# finalizer# s1 of
-    (# s2, weak# #) ->
-      case makeStableName# ba# s2 of
-        (# s3, sname# #) ->
-          (# s3, WeakSymbol# weak# sname# #)
-
-deRefWeakSymbol :: WeakSymbol -> Maybe ByteArray
-{-# INLINE deRefWeakSymbol #-}
-deRefWeakSymbol (WeakSymbol# w _sn) =
-    -- SAFETY: This should even be safe
-    -- in the presence of inlining, CSE and full laziness;
-    Accursed.accursedUnutterablePerformIO $ IO $ \s ->
-  case deRefWeak# w s of
-    (# s1, flag, p #) -> case flag of
-      0# -> (# s1, Nothing #)
-      _ -> (# s1, Just (ByteArray p) #)
-
 aliveWeaks :: NonEmptyWeakSymbol -> [ByteArray]
 {-# INLINE aliveWeaks #-}
-aliveWeaks = mapMaybe deRefWeakSymbol . nonEmptyToList
+aliveWeaks = mapMaybe WeakSymbol.deref . NonEmptyWeakSymbol.toList
 
 -- | Get a handle to the `GlobalSymbolTable`
 --

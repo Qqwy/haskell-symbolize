@@ -76,6 +76,8 @@ library:
   other-modules:
   - Symbolize.Accursed
   - Symbolize.SipHash
+  - Symbolize.WeakSymbol
+  - Symbolize.NonEmptyWeakSymbol
   - Symbolize.SymbolTable
 
 tested-with:
