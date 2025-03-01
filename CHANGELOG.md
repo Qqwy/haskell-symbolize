@@ -8,6 +8,8 @@ and this project adheres to the
 
 ## Unreleased
 
+- Only calculate the SipHash hash of an incoming text _once_ when inserting. (c.f. [#8](https://github.com/Qqwy/haskell-symbolize/issues/8))
+
 ## 1.0.2.3
 
 - Swaps the internal usage of lists in the global symbol table for `NonEmpty` lists, since they will never be empty. (PR [#5](https://github.com/Qqwy/haskell-symbolize/pull/5)). Thank you, @Bodigrim!
