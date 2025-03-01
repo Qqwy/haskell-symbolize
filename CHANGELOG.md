@@ -8,6 +8,10 @@ and this project adheres to the
 
 ## Unreleased
 
+## 1.0.2.3
+
+- Swaps the internal usage of lists in the global symbol table for `NonEmpty` lists, since they will never be empty. (PR [#5](https://github.com/Qqwy/haskell-symbolize/pull/5)). Thank you, @Bodigrim!
+
 ## 1.0.2.2
 
 - Fixing some typos in the documentation (PR [#3](https://github.com/Qqwy/haskell-symbolize/pull/3)). Thank you, @Bodigrim!
