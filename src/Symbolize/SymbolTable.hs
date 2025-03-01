@@ -17,13 +17,9 @@ where
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Array.Byte (ByteArray (ByteArray))
 import Data.Foldable qualified as Foldable
--- import Data.IORef (IORef)
--- import Data.IORef qualified as IORef
 import qualified Data.Vector.Mutable as VM
 import qualified Data.Vector.Unboxed.Mutable  as UM
 import Data.Vector.Hashtables qualified as HashTable
--- import Data.HashTable.IO (CuckooHashTable)
--- import Data.HashTable.IO qualified as HashTable
 import Data.List qualified
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.List.NonEmpty qualified as NonEmpty
