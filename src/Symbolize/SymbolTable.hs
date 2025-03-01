@@ -2,6 +2,7 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# OPTIONS_HADDOCK hide, prune #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Symbolize.SymbolTable
   ( insertGlobal,
@@ -18,8 +19,10 @@ import Data.Array.Byte (ByteArray (ByteArray))
 import Data.Foldable qualified as Foldable
 import Data.IORef (IORef)
 import Data.IORef qualified as IORef
-import Data.IntMap.Strict (IntMap)
-import Data.IntMap.Strict qualified as IntMap
+-- import Data.IntMap.Strict (IntMap)
+-- import Data.IntMap.Strict qualified as IntMap
+import Data.HashTable.IO (CuckooHashTable)
+import Data.HashTable.IO qualified as HashTable
 import Data.List qualified
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.List.NonEmpty qualified as NonEmpty
@@ -47,7 +50,7 @@ import Prelude hiding (lookup)
 data WeakSymbol where
   WeakSymbol# :: Weak# ByteArray# -> StableName# ByteArray# -> WeakSymbol
 
-newtype SymbolTable = SymbolTable (IntMap (NonEmpty WeakSymbol))
+newtype SymbolTable = SymbolTable (CuckooHashTable Int (NonEmpty WeakSymbol))
 
 -- | The global Symbol Table, containing a mapping between each symbol's textual representation and its deduplicated pointer.
 --
@@ -72,7 +75,8 @@ instance Show GlobalSymbolTable where
   -- SAFETY: We're only reading, and do not care about performance here.
   show (GlobalSymbolTable table _) = System.IO.Unsafe.unsafePerformIO $ do
     SymbolTable symtab <- IORef.readIORef table
-    let contents = Data.List.sort $ map Accursed.shortTextFromBA $ foldMap aliveWeaks $ IntMap.elems symtab
+    elems <- fmap snd <$> HashTable.toList symtab
+    let contents = Data.List.sort $ map Accursed.shortTextFromBA $ foldMap aliveWeaks elems
     pure $ "GlobalSymbolTable { size = " <> show (length contents) <> ", symbols = " <> show contents <> " }"
 
 insertGlobal :: ByteArray# -> IO ByteArray
@@ -109,21 +113,25 @@ removeGlobal !key = do
 
 insert :: Hash -> WeakSymbol -> SymbolTable -> SymbolTable
 {-# INLINE insert #-}
-insert key weak (SymbolTable table) =
-  let table' = IntMap.alter (Just . maybe (pure weak) (NonEmpty.cons weak)) (hashToInt key) table
-   in SymbolTable table'
+insert key weak (SymbolTable table) = unsafePerformIO $ do
+  HashTable.mutate table (hashToInt key) $ \case
+    Nothing -> (Just (pure weak), ())
+    Just a -> (Just (NonEmpty.cons weak a), ())
+  pure (SymbolTable table)
 
 lookup :: ByteArray# -> SipHash.SipKey -> SymbolTable -> Maybe ByteArray
 {-# INLINE lookup #-}
 lookup ba# sipkey (SymbolTable table) = do
   let !key = calculateHash sipkey ba#
-  weaks <- IntMap.lookup (hashToInt key) table
+  weaks <- unsafePerformIO $ HashTable.lookup table (hashToInt key)
   Foldable.find (\other -> other == ByteArray ba#) (aliveWeaks weaks)
 
 remove :: Hash -> SymbolTable -> SymbolTable
 {-# INLINE remove #-}
 remove (Hash key) (SymbolTable table) =
-  let table' = IntMap.update removeTombstones key table
+  let table' = unsafePerformIO $ do 
+        HashTable.mutate table key (\weaks -> (weaks >>= removeTombstones, ()))
+        pure table
    in SymbolTable table'
   where
     removeTombstones = NonEmpty.nonEmpty . NonEmpty.filter isNoTombstone
@@ -177,14 +185,18 @@ globalSymbolTable' :: GlobalSymbolTable
 -- SAFETY: We need all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
 {-# NOINLINE globalSymbolTable' #-}
 globalSymbolTable' = unsafePerformIO $ do
-  !ref <- IORef.newIORef (SymbolTable mempty)
+  !table <- HashTable.new
+  !ref <- IORef.newIORef (SymbolTable table)
   !sipkey <- Random.uniformM Random.globalStdGen
   pure (GlobalSymbolTable ref sipkey)
 
 -- | Returns the current size of the global symbol table. Useful for introspection or metrics.
+--
+-- Should not be used in high-performance code, as it might walk over the full table.
 globalSymbolTableSize :: IO Word
 globalSymbolTableSize = do
   GlobalSymbolTable gsymtab _ <- globalSymbolTable
   SymbolTable table <- IORef.readIORef gsymtab
-  let size = fromIntegral (IntMap.size table)
+  elems <- HashTable.toList table
+  let size = fromIntegral (length elems)
   pure size
