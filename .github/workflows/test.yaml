@@ -1,9 +1,26 @@
 on: [push]
 name: test
 jobs:
+  generate-matrix:
+    name: "Generate matrix from cabal"
+    outputs: 
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract the tested GHC versions
+        id: set-matrix
+        uses: kleidukos/get-tested@v0.1.7.0
+        with:
+          cabal-file: symbolize.cabal
+          ubuntu-version: "latest"
+          macos-version: "13"
+          version: 0.1.7.0
   test:
-    name: Stack test
-    runs-on: ubuntu-latest # or macOS-latest, or windows-latest
+    name: ${{ matrix.ghc }} on ${{ matrix.os }} - Stack test
+    needs: generate-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix: ${{ fromJSON(needs.generate-matrix.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v3
@@ -11,19 +28,19 @@ jobs:
           path: |
             ~/.stack
             .stack-work
-          key: ${{ runner.os }}-stack-${{ hashFiles('stack.yaml.lock', 'package.yaml') }}
+          key: ${{ matrix.os }}-${{ matrix.ghc }}-stack-${{ hashFiles('stack.yaml.lock', 'package.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-stack-
+            ${{ matrix.os }}-${{ matrix.ghc }}-stack-
       - name: Restore cached dependencies
         uses: actions/cache/restore@v3
         id: cache
         with:
             path: ~/.stack
-            key: ${{ runner.os }}-stack-${{ hashFiles('**/*.cabal') }}
+            key: ${{ matrix.os }}-${{ matrix.ghc }}-stack-${{ hashFiles('**/*.cabal') }}
       - uses: haskell-actions/setup@v2
         with:
-          ghc-version: '9.8.1' # Exact version of ghc to use
+          ghc-version: ${{ matrix.ghc }} # Exact version of ghc to use
           # cabal-version: 'latest'. Omitted, but defaults to 'latest'
           enable-stack: true
           stack-version: 'latest'
-      - run: stack test
+      - run: stack --compiler="ghc-${{ matrix.ghc }}" test

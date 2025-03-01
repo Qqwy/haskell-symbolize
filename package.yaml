@@ -13,6 +13,8 @@ extra-source-files:
 # Metadata used when publishing your package
 synopsis:            Efficient global Symbol table, with Garbage Collection. 
 category:            Data, Data Structures
+tested-with:
+  GHC ==9.2.8 || ==9.4.8 || ==9.6.4 || ==9.8.2 || ==9.10.1
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
@@ -68,6 +70,7 @@ ghc-options:
 - -Wmissing-home-modules
 - -Wpartial-fields
 - -Wredundant-constraints
+
 
 library:
   source-dirs: src
