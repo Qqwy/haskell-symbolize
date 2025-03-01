@@ -21,6 +21,8 @@ import Data.IORef qualified as IORef
 import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
 import Data.List qualified
+import Data.List.NonEmpty (NonEmpty(..))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (mapMaybe)
 import GHC.Exts (ByteArray#, StableName#, Weak#, deRefWeak#, makeStableName#, mkWeak#)
 import GHC.IO (IO (IO), unsafePerformIO)
@@ -45,7 +47,7 @@ import Prelude hiding (lookup)
 data WeakSymbol where
   WeakSymbol# :: Weak# ByteArray# -> StableName# ByteArray# -> WeakSymbol
 
-newtype SymbolTable = SymbolTable (IntMap [WeakSymbol])
+newtype SymbolTable = SymbolTable (IntMap (NonEmpty WeakSymbol))
 
 -- | The global Symbol Table, containing a mapping between each symbol's textual representation and its deduplicated pointer.
 --
@@ -108,7 +110,7 @@ removeGlobal !key = do
 insert :: Hash -> WeakSymbol -> SymbolTable -> SymbolTable
 {-# INLINE insert #-}
 insert key weak (SymbolTable table) =
-  let table' = IntMap.insertWith (++) (hashToInt key) (pure weak) table
+  let table' = IntMap.alter (Just . maybe (pure weak) (NonEmpty.cons weak)) (hashToInt key) table
    in SymbolTable table'
 
 lookup :: ByteArray# -> SipHash.SipKey -> SymbolTable -> Maybe ByteArray
@@ -124,10 +126,7 @@ remove (Hash key) (SymbolTable table) =
   let table' = IntMap.update removeTombstones key table
    in SymbolTable table'
   where
-    removeTombstones weaks =
-      case filter isNoTombstone weaks of
-        [] -> Nothing
-        leftover -> Just leftover
+    removeTombstones = NonEmpty.nonEmpty . NonEmpty.filter isNoTombstone
     isNoTombstone weak =
       case deRefWeakSymbol weak of
         Nothing -> False
@@ -164,9 +163,9 @@ deRefWeakSymbol (WeakSymbol# w _sn) =
       0# -> (# s1, Nothing #)
       _ -> (# s1, Just (ByteArray p) #)
 
-aliveWeaks :: [WeakSymbol] -> [ByteArray]
+aliveWeaks :: NonEmpty WeakSymbol -> [ByteArray]
 {-# INLINE aliveWeaks #-}
-aliveWeaks = mapMaybe $ \weak -> deRefWeakSymbol weak
+aliveWeaks = mapMaybe deRefWeakSymbol . NonEmpty.toList
 
 -- | Get a handle to the `GlobalSymbolTable`
 --
