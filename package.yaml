@@ -125,6 +125,7 @@ benchmarks:
     main: SymbolizeBench.hs
     build-depends:
       - symbolize
+      - vector
       - tasty-bench
     mixins:
       tasty-bench (Test.Tasty.Bench as Criterion, Test.Tasty.Bench as Criterion.Main, Test.Tasty.Bench as Gauge, Test.Tasty.Bench as Gauge.Main)
