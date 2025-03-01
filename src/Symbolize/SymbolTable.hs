@@ -69,12 +69,6 @@ insertGlobal :: ByteArray# -> IO ByteArray
 insertGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
   let !hash = calculateHash sipkey ba#
-  -- SAFETY: If the table IORef contested, 
-  -- this might trigger `weak` creation for the same bytestring from multiple threads
-  -- at the same time.
-  -- But finalization is idempotent, and only when a thread finally wins the Compare-and-Swap
-  -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
-  -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
   MVar.withMVar gsymtab $ \table -> do
     res <- lookup ba# sipkey table
     case res of
