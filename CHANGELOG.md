@@ -8,6 +8,10 @@ and this project adheres to the
 
 ## Unreleased
 
+## 1.0.2.2
+
+- Fixing some typos in the documentation (PR [#3](https://github.com/Qqwy/haskell-symbolize/pull/3)). Thank you, @Bodigrim!
+
 ## 1.0.2.1
 
 - Widen dependency bounds, making the package work with the latest version of `containers` and `hashable`.
