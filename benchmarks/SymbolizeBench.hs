@@ -17,7 +17,6 @@ mkTexts = do
 roundtripMany :: Vector Text -> Vector Text
 roundtripMany = fmap (\val -> Symbolize.unintern $! Symbolize.intern $! val)
 
-
 main :: IO ()
 main = defaultMain
   [ env mkTexts $ \texts ->

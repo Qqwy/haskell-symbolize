@@ -84,7 +84,7 @@ insertGlobal :: ByteArray# -> IO ByteArray
 {-# INLINE insertGlobal #-}
 insertGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
-  let !key = calculateHash sipkey ba#
+  let !hash = calculateHash sipkey ba#
   -- SAFETY: If the table IORef contested, 
   -- this might trigger `weak` creation for the same bytestring from multiple threads
   -- at the same time.
@@ -92,19 +92,20 @@ insertGlobal ba# = do
   -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
   -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
   MVar.withMVar gsymtab $ \table -> do
-    res <- lookup ba# sipkey table
+    res <- lookup ba# hash table
     case res of
       Just ba -> pure ba
       Nothing -> do
-        !weak <- mkWeakSymbol ba# (removeGlobal key)
-        insert key weak table
+        !weak <- mkWeakSymbol ba# (removeGlobal hash)
+        insert hash weak table
         pure (ByteArray ba#)
 
 lookupGlobal :: ByteArray# -> IO (Maybe ByteArray)
 {-# INLINE lookupGlobal #-}
 lookupGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
-  MVar.withMVar gsymtab (lookup ba# sipkey)
+  let !hash = calculateHash sipkey ba#
+  MVar.withMVar gsymtab (lookup ba# hash)
 
 removeGlobal :: Hash -> IO ()
 {-# INLINE removeGlobal #-}
@@ -120,11 +121,10 @@ insert key weak (SymbolTable table) = HashTable.alter table insertOrConcat (hash
       Nothing -> Just (pure weak)
       Just a -> Just (NonEmpty.cons weak a)
 
-lookup :: ByteArray# -> SipHash.SipKey -> SymbolTable -> IO (Maybe ByteArray)
+lookup :: ByteArray# -> Hash -> SymbolTable -> IO (Maybe ByteArray)
 {-# INLINE lookup #-}
-lookup ba# sipkey (SymbolTable table) = do
-  let !key = calculateHash sipkey ba#
-  weaks <- HashTable.lookup table (hashToInt key)
+lookup ba# hash (SymbolTable table) = do
+  weaks <- HashTable.lookup table (hashToInt hash)
   pure $ case weaks of
     Nothing -> Nothing
     Just weaks' ->
