@@ -27,7 +27,6 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (mapMaybe)
 import GHC.Exts (ByteArray#, StableName#, Weak#, deRefWeak#, makeStableName#, mkWeak#)
 import GHC.IO (IO (IO), unsafePerformIO)
-import Symbolize.Accursed qualified
 import Symbolize.Accursed qualified as Accursed
 import Symbolize.SipHash qualified as SipHash
 import System.IO.Unsafe qualified
@@ -61,8 +60,7 @@ newtype SymbolTable = SymbolTable (CuckooHashTable Int (NonEmpty WeakSymbol))
 --
 -- Current implementation details (these might change even between PVP-compatible versions):
 --
--- - An `IntMap` is used for mapping $(SipHash text) -> weak symbol$.
---   Such an IntMap has O(min(n, 64)) lookup time.
+-- - A `CuckooHashTable Int` is used for mapping $(SipHash text) -> weak symbol$.
 -- - Since SipHash is used as hashing algorithm and the key that is used
 --   is randomized on global table initialization,
 --   the table is resistent to HashDoS attacks.
@@ -90,49 +88,47 @@ insertGlobal ba# = do
   -- But finalization is idempotent, and only when a thread finally wins the Compare-and-Swap
   -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
   -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
-  MVar.modifyMVar gsymtab $ \table -> do
+  MVar.withMVar gsymtab $ \table -> do
     !weak <- mkWeakSymbol ba# (removeGlobal key)
-    case lookup ba# sipkey table of
-      Just ba -> pure (table, ba)
-      Nothing ->
-        pure (insert key weak table, ByteArray ba#)
+    res <- lookup ba# sipkey table
+    case res of
+      Just ba -> pure ba
+      Nothing -> do
+        insert key weak table
+        pure (ByteArray ba#)
 
 lookupGlobal :: ByteArray# -> IO (Maybe ByteArray)
 {-# INLINE lookupGlobal #-}
 lookupGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
-  MVar.withMVar gsymtab $ \table -> do
-    pure (lookup ba# sipkey table)
+  MVar.withMVar gsymtab (lookup ba# sipkey)
 
 removeGlobal :: Hash -> IO ()
 {-# INLINE removeGlobal #-}
 removeGlobal !key = do
   GlobalSymbolTable gsymtab _ <- globalSymbolTable
-  MVar.modifyMVar gsymtab $ \table -> do
-    pure (remove key table, ())
+  MVar.withMVar gsymtab (remove key)
 
-insert :: Hash -> WeakSymbol -> SymbolTable -> SymbolTable
+insert :: Hash -> WeakSymbol -> SymbolTable -> IO ()
 {-# INLINE insert #-}
-insert key weak (SymbolTable table) = unsafePerformIO $ do
+insert key weak (SymbolTable table) = do
   HashTable.mutate table (hashToInt key) $ \case
     Nothing -> (Just (pure weak), ())
     Just a -> (Just (NonEmpty.cons weak a), ())
-  pure (SymbolTable table)
 
-lookup :: ByteArray# -> SipHash.SipKey -> SymbolTable -> Maybe ByteArray
+lookup :: ByteArray# -> SipHash.SipKey -> SymbolTable -> IO (Maybe ByteArray)
 {-# INLINE lookup #-}
 lookup ba# sipkey (SymbolTable table) = do
   let !key = calculateHash sipkey ba#
-  weaks <- unsafePerformIO $ HashTable.lookup table (hashToInt key)
-  Foldable.find (\other -> other == ByteArray ba#) (aliveWeaks weaks)
+  weaks <- HashTable.lookup table (hashToInt key)
+  pure $ case weaks of
+    Nothing -> Nothing
+    Just weaks' ->
+      Foldable.find (\other -> other == ByteArray ba#) (aliveWeaks weaks')
 
-remove :: Hash -> SymbolTable -> SymbolTable
+remove :: Hash -> SymbolTable -> IO ()
 {-# INLINE remove #-}
-remove (Hash key) (SymbolTable table) =
-  let table' = unsafePerformIO $ do 
-        HashTable.mutate table key (\weaks -> (weaks >>= removeTombstones, ()))
-        pure table
-   in SymbolTable table'
+remove (Hash key) (SymbolTable table) = HashTable.mutate table key (\weaks -> (weaks >>= removeTombstones, ()))
   where
     removeTombstones = NonEmpty.nonEmpty . NonEmpty.filter isNoTombstone
     isNoTombstone weak =
@@ -165,7 +161,7 @@ deRefWeakSymbol :: WeakSymbol -> Maybe ByteArray
 deRefWeakSymbol (WeakSymbol# w _sn) = 
     -- SAFETY: This should even be safe
     -- in the presence of inlining, CSE and full laziness;
-    Symbolize.Accursed.accursedUnutterablePerformIO $ IO $ \s ->
+    Accursed.accursedUnutterablePerformIO $ IO $ \s ->
   case deRefWeak# w s of
     (# s1, flag, p #) -> case flag of
       0# -> (# s1, Nothing #)
