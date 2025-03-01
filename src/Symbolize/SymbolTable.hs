@@ -17,10 +17,8 @@ where
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Array.Byte (ByteArray (ByteArray))
 import Data.Foldable qualified as Foldable
-import Data.IORef (IORef)
-import Data.IORef qualified as IORef
--- import Data.IntMap.Strict (IntMap)
--- import Data.IntMap.Strict qualified as IntMap
+-- import Data.IORef (IORef)
+-- import Data.IORef qualified as IORef
 import Data.HashTable.IO (CuckooHashTable)
 import Data.HashTable.IO qualified as HashTable
 import Data.List qualified
@@ -35,6 +33,8 @@ import Symbolize.SipHash qualified as SipHash
 import System.IO.Unsafe qualified
 import System.Random.Stateful qualified as Random (Uniform (uniformM), globalStdGen)
 import Prelude hiding (lookup)
+import Control.Concurrent (MVar)
+import Control.Concurrent.MVar qualified as MVar
 
 -- Inside the WeakSymbol
 -- we keep:
@@ -66,7 +66,7 @@ newtype SymbolTable = SymbolTable (CuckooHashTable Int (NonEmpty WeakSymbol))
 -- - Since SipHash is used as hashing algorithm and the key that is used
 --   is randomized on global table initialization,
 --   the table is resistent to HashDoS attacks.
-data GlobalSymbolTable = GlobalSymbolTable (IORef SymbolTable) SipHash.SipKey
+data GlobalSymbolTable = GlobalSymbolTable (MVar SymbolTable) SipHash.SipKey
 
 newtype Hash = Hash {hashToInt :: Int}
 
@@ -74,10 +74,10 @@ newtype Hash = Hash {hashToInt :: Int}
 instance Show GlobalSymbolTable where
   -- SAFETY: We're only reading, and do not care about performance here.
   show (GlobalSymbolTable table _) = System.IO.Unsafe.unsafePerformIO $ do
-    SymbolTable symtab <- IORef.readIORef table
-    elems <- fmap snd <$> HashTable.toList symtab
-    let contents = Data.List.sort $ map Accursed.shortTextFromBA $ foldMap aliveWeaks elems
-    pure $ "GlobalSymbolTable { size = " <> show (length contents) <> ", symbols = " <> show contents <> " }"
+    MVar.withMVar table $ \(SymbolTable symtab) -> do
+      elems <- fmap snd <$> HashTable.toList symtab
+      let contents = Data.List.sort $ map Accursed.shortTextFromBA $ foldMap aliveWeaks elems
+      pure $ "GlobalSymbolTable { size = " <> show (length contents) <> ", symbols = " <> show contents <> " }"
 
 insertGlobal :: ByteArray# -> IO ByteArray
 {-# INLINE insertGlobal #-}
@@ -90,27 +90,26 @@ insertGlobal ba# = do
   -- But finalization is idempotent, and only when a thread finally wins the Compare-and-Swap
   -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
   -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
-  IORef.atomicModifyIORef' gsymtab $ \table ->
-    case lookup ba# hash table of
-      Just ba -> (table, ba)
+  MVar.modifyMVar gsymtab $ \table -> do
+    !weak <- mkWeakSymbol ba# (removeGlobal key)
+    case lookup ba# sipkey table of
+      Just ba -> pure (table, ba)
       Nothing ->
-        let !weak = Accursed.accursedUnutterablePerformIO (mkWeakSymbol ba# (removeGlobal hash))
-        in (insert hash weak table, ByteArray ba#)
+        pure (insert key weak table, ByteArray ba#)
 
 lookupGlobal :: ByteArray# -> IO (Maybe ByteArray)
 {-# INLINE lookupGlobal #-}
 lookupGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
-  table <- IORef.readIORef gsymtab
-  let hash = calculateHash sipkey ba#
-  pure (lookup ba# hash table)
+  MVar.withMVar gsymtab $ \table -> do
+    pure (lookup ba# sipkey table)
 
 removeGlobal :: Hash -> IO ()
 {-# INLINE removeGlobal #-}
 removeGlobal !key = do
   GlobalSymbolTable gsymtab _ <- globalSymbolTable
-  IORef.atomicModifyIORef' gsymtab $ \table ->
-    (remove key table, ())
+  MVar.modifyMVar gsymtab $ \table -> do
+    pure (remove key table, ())
 
 insert :: Hash -> WeakSymbol -> SymbolTable -> SymbolTable
 {-# INLINE insert #-}
@@ -187,7 +186,7 @@ globalSymbolTable' :: GlobalSymbolTable
 {-# NOINLINE globalSymbolTable' #-}
 globalSymbolTable' = unsafePerformIO $ do
   !table <- HashTable.new
-  !ref <- IORef.newIORef (SymbolTable table)
+  !ref <- MVar.newMVar (SymbolTable table)
   !sipkey <- Random.uniformM Random.globalStdGen
   pure (GlobalSymbolTable ref sipkey)
 
@@ -197,7 +196,7 @@ globalSymbolTable' = unsafePerformIO $ do
 globalSymbolTableSize :: IO Word
 globalSymbolTableSize = do
   GlobalSymbolTable gsymtab _ <- globalSymbolTable
-  SymbolTable table <- IORef.readIORef gsymtab
-  elems <- HashTable.toList table
-  let size = fromIntegral (length elems)
-  pure size
+  MVar.withMVar gsymtab $ \(SymbolTable table) -> do
+    elems <- HashTable.toList table
+    let size = fromIntegral (length elems)
+    pure size
