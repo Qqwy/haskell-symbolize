@@ -185,7 +185,7 @@ globalSymbolTable' :: GlobalSymbolTable
 -- SAFETY: We need all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
 {-# NOINLINE globalSymbolTable' #-}
 globalSymbolTable' = unsafePerformIO $ do
-  !table <- HashTable.initialize 256
+  !table <- HashTable.initialize 128
   !ref <- MVar.newMVar (SymbolTable table)
   !sipkey <- Random.uniformM Random.globalStdGen
   pure (GlobalSymbolTable ref sipkey)
