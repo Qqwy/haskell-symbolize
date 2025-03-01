@@ -18,7 +18,7 @@
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2023-01-01.yaml
 resolver:
-  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/21/21.yaml
+  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/43.yaml
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -41,8 +41,8 @@ packages:
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
 # extra-deps: []
-extra-deps:
-- text-display-0.0.5.0@sha256:f7f45e6596916670481af2121ea0dde77c7022dae869c1a5d692c517fec33f4b,2778
+# extra-deps:
+# - text-display-0.0.5.0@sha256:f7f45e6596916670481af2121ea0dde77c7022dae869c1a5d692c517fec33f4b,2778
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
