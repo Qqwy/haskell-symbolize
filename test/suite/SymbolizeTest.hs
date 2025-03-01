@@ -13,7 +13,7 @@ import qualified Symbolize
 -- import Test.Tasty.HUnit
 
 hprop_symbolTableIsIdempotent :: Property
-hprop_symbolTableIsIdempotent = withTests 1000 $ property $ do
+hprop_symbolTableIsIdempotent = withTests 2000 $ property $ do
   texts <- forAll $ Gen.list (Range.linear 0 200) (Gen.text (Range.linear 0 20) Gen.unicode)
   let !symbols = fmap Symbolize.intern texts
   annotateShow (fmap Data.Hashable.hash symbols)
@@ -22,7 +22,7 @@ hprop_symbolTableIsIdempotent = withTests 1000 $ property $ do
   texts2 === texts
 
 hprop_concurrentAccessDoesNotCorruptTable :: Property
-hprop_concurrentAccessDoesNotCorruptTable = withTests 500 $ property $ do
+hprop_concurrentAccessDoesNotCorruptTable = withTests 2000 $ property $ do
   let numCores = 8
   texts <- forAll $ Gen.list (Range.linear 0 200) (Gen.text (Range.linear 0 20) Gen.unicode)
   results <- liftIO $ Control.Concurrent.Async.forConcurrently [(1 :: Integer) .. numCores] $ \_ -> do
