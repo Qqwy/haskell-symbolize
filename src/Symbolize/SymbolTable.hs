@@ -79,26 +79,27 @@ insertGlobal :: ByteArray# -> IO ByteArray
 {-# INLINE insertGlobal #-}
 insertGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
-  let !key = calculateHash sipkey ba#
+  let !hash = calculateHash sipkey ba#
   -- SAFETY: If the table IORef contested, 
   -- this might trigger `weak` creation for the same bytestring from multiple threads
   -- at the same time.
   -- But finalization is idempotent, and only when a thread finally wins the Compare-and-Swap
   -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
   -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
-  !weak <- mkWeakSymbol ba# (removeGlobal key)
+  !weak <- mkWeakSymbol ba# (removeGlobal hash)
   IORef.atomicModifyIORef' gsymtab $ \table ->
-    case lookup ba# sipkey table of
+    case lookup ba# hash table of
       Just ba -> (table, ba)
       Nothing ->
-        (insert key weak table, ByteArray ba#)
+        (insert hash weak table, ByteArray ba#)
 
 lookupGlobal :: ByteArray# -> IO (Maybe ByteArray)
 {-# INLINE lookupGlobal #-}
 lookupGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
   table <- IORef.readIORef gsymtab
-  pure (lookup ba# sipkey table)
+  let hash = calculateHash sipkey ba#
+  pure (lookup ba# hash table)
 
 removeGlobal :: Hash -> IO ()
 {-# INLINE removeGlobal #-}
@@ -113,11 +114,10 @@ insert key weak (SymbolTable table) =
   let table' = IntMap.alter (Just . maybe (pure weak) (NonEmpty.cons weak)) (hashToInt key) table
    in SymbolTable table'
 
-lookup :: ByteArray# -> SipHash.SipKey -> SymbolTable -> Maybe ByteArray
+lookup :: ByteArray# -> Hash -> SymbolTable -> Maybe ByteArray
 {-# INLINE lookup #-}
-lookup ba# sipkey (SymbolTable table) = do
-  let !key = calculateHash sipkey ba#
-  weaks <- IntMap.lookup (hashToInt key) table
+lookup ba# hash (SymbolTable table) = do
+  weaks <- IntMap.lookup (hashToInt hash) table
   Foldable.find (\other -> other == ByteArray ba#) (aliveWeaks weaks)
 
 remove :: Hash -> SymbolTable -> SymbolTable
