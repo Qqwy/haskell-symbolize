@@ -21,8 +21,8 @@ import qualified Data.Vector.Mutable as VM
 import qualified Data.Vector.Unboxed.Mutable  as UM
 import Data.Vector.Hashtables qualified as HashTable
 import Data.List qualified
-import Data.List.NonEmpty (NonEmpty(..))
-import Data.List.NonEmpty qualified as NonEmpty
+-- import Data.List.NonEmpty (NonEmpty(..))
+-- import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (mapMaybe)
 import GHC.Exts (ByteArray#, StableName#, Weak#, deRefWeak#, makeStableName#, mkWeak#)
 import GHC.IO (IO (IO), unsafePerformIO)
@@ -48,7 +48,27 @@ import Control.Concurrent.MVar qualified as MVar
 data WeakSymbol where
   WeakSymbol# :: Weak# ByteArray# -> StableName# ByteArray# -> WeakSymbol
 
-newtype SymbolTable = SymbolTable (HashTable.Dictionary (HashTable.PrimState IO) UM.MVector Int VM.MVector (NonEmpty WeakSymbol))
+-- | A monomorphised version of `Data.List.NonEmpty`
+-- which allows its head `WeakSymbol` to be UNPACKed into it.
+-- Since we expect collisions to be _very_ rare,
+-- this skips the intermediate allocation almost always.
+data NonEmptyWeakSymbol where
+  (:|) :: {-# UNPACK #-} !WeakSymbol -> ![WeakSymbol] -> NonEmptyWeakSymbol
+
+nonEmptyToList :: NonEmptyWeakSymbol -> [WeakSymbol]
+nonEmptyToList (a :| as) = a : as
+
+nonEmptyFromList :: [WeakSymbol] -> Maybe NonEmptyWeakSymbol
+nonEmptyFromList [] = Nothing
+nonEmptyFromList (a : as) = Just (a :| as)
+
+singletonNonEmptyWeakSymbol :: WeakSymbol -> NonEmptyWeakSymbol
+singletonNonEmptyWeakSymbol a = a :| []
+
+consNonEmptyWeakSymbol :: WeakSymbol -> NonEmptyWeakSymbol -> NonEmptyWeakSymbol
+consNonEmptyWeakSymbol y (x :| xs) = y :| (x : xs)
+
+newtype SymbolTable = SymbolTable (HashTable.Dictionary (HashTable.PrimState IO) UM.MVector Int VM.MVector NonEmptyWeakSymbol)
 
 -- | The global Symbol Table, containing a mapping between each symbol's textual representation and its deduplicated pointer.
 --
@@ -112,10 +132,10 @@ removeGlobal !key = do
 insert :: Hash -> WeakSymbol -> SymbolTable -> IO ()
 {-# INLINE insert #-}
 insert key weak (SymbolTable table) = HashTable.alter table insertOrConcat (hashToInt key)
-  where 
+  where
     insertOrConcat = \case
-      Nothing -> Just (pure weak)
-      Just a -> Just (NonEmpty.cons weak a)
+      Nothing -> Just (singletonNonEmptyWeakSymbol weak)
+      Just weaks -> Just (consNonEmptyWeakSymbol weak weaks)
 
 lookup :: ByteArray# -> Hash -> SymbolTable -> IO (Maybe ByteArray)
 {-# INLINE lookup #-}
@@ -128,9 +148,9 @@ lookup ba# hash (SymbolTable table) = do
 
 remove :: Hash -> SymbolTable -> IO ()
 {-# INLINE remove #-}
-remove (Hash key) (SymbolTable table) = HashTable.alter table (\weaks -> (weaks >>= removeTombstones)) key
+remove (Hash key) (SymbolTable table) = HashTable.alter table (>>= removeTombstones) key
   where
-    removeTombstones = NonEmpty.nonEmpty . NonEmpty.filter isNoTombstone
+    removeTombstones = nonEmptyFromList . filter isNoTombstone . nonEmptyToList
     isNoTombstone weak =
       case deRefWeakSymbol weak of
         Nothing -> False
@@ -144,7 +164,7 @@ calculateHash sipkey ba# =
 
 mkWeakSymbol :: ByteArray# -> IO () -> IO WeakSymbol
 {-# INLINE mkWeakSymbol #-}
-mkWeakSymbol ba# (IO finalizer#) = 
+mkWeakSymbol ba# (IO finalizer#) =
     -- SAFETY: This should even be safe
     -- in the presence of inlining, CSE and full laziness
     --
@@ -158,7 +178,7 @@ mkWeakSymbol ba# (IO finalizer#) =
 
 deRefWeakSymbol :: WeakSymbol -> Maybe ByteArray
 {-# INLINE deRefWeakSymbol #-}
-deRefWeakSymbol (WeakSymbol# w _sn) = 
+deRefWeakSymbol (WeakSymbol# w _sn) =
     -- SAFETY: This should even be safe
     -- in the presence of inlining, CSE and full laziness;
     Accursed.accursedUnutterablePerformIO $ IO $ \s ->
@@ -167,9 +187,9 @@ deRefWeakSymbol (WeakSymbol# w _sn) =
       0# -> (# s1, Nothing #)
       _ -> (# s1, Just (ByteArray p) #)
 
-aliveWeaks :: NonEmpty WeakSymbol -> [ByteArray]
+aliveWeaks :: NonEmptyWeakSymbol -> [ByteArray]
 {-# INLINE aliveWeaks #-}
-aliveWeaks = mapMaybe deRefWeakSymbol . NonEmpty.toList
+aliveWeaks = mapMaybe deRefWeakSymbol . nonEmptyToList
 
 -- | Get a handle to the `GlobalSymbolTable`
 --
