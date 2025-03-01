@@ -92,11 +92,11 @@ insertGlobal ba# = do
   -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
   -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
   MVar.withMVar gsymtab $ \table -> do
-    !weak <- mkWeakSymbol ba# (removeGlobal key)
     res <- lookup ba# sipkey table
     case res of
       Just ba -> pure ba
       Nothing -> do
+        !weak <- mkWeakSymbol ba# (removeGlobal key)
         insert key weak table
         pure (ByteArray ba#)
 
