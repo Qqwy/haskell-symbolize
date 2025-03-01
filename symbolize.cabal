@@ -58,6 +58,8 @@ library
   other-modules:
       Symbolize.Accursed
       Symbolize.SipHash
+      Symbolize.WeakSymbol
+      Symbolize.NonEmptyWeakSymbol
       Symbolize.SymbolTable
   hs-source-dirs:
       src
