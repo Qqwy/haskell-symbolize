@@ -8,6 +8,10 @@ and this project adheres to the
 
 ## Unreleased
 
+## 1.0.3.1
+
+- Fix typo in documentation of `globalSymbolTable`
+
 ## 1.0.3.0
 
 - Swap internals of the global symbol table.

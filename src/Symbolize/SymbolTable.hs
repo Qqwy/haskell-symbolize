@@ -47,7 +47,8 @@ newtype SymbolTable = SymbolTable (HashTable.Dictionary (HashTable.PrimState IO)
 --
 -- Current implementation details (these might change even between PVP-compatible versions):
 --
--- - A `CuckooHashTable Int` is used for mapping $(SipHash text) -> weak symbol$.
+-- - A `HashTable.Dictionary Int` (from the `vector-hashtables` library)
+--   is used for mapping $(SipHash text) -> weak symbol$.
 -- - Since SipHash is used as hashing algorithm and the key that is used
 --   is randomized on global table initialization,
 --   the table is resistent to HashDoS attacks.
