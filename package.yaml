@@ -1,5 +1,5 @@
-name:                symbolize
-version:             1.0.3.1
+name:                symbolise
+version:             0.0.0.1
 github:              "Qqwy/haskell-symbolize"
 license:             BSD-3-Clause
 author:              "Qqwy / Marten"
@@ -11,54 +11,18 @@ extra-source-files:
 - CHANGELOG.md
 
 # Metadata used when publishing your package
-synopsis:            Efficient global Symbol table, with Garbage Collection. 
+synopsis:            You want Symbolize with a Z
 category:            Data, Data Structures
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
 description: |
-  Symbols, also known as Atoms or Interned Strings, are a common technique
-  to reduce memory usage and improve performance when using many small strings:
+  You want Symbolize with a Z:
 
-  A Symbol represents a string (any `Textual`, so String, Text, ShortText, ByteString, ShortByteString, etc.)
+  Hackage: <https://hackage.haskell.org/package/symbolize>
 
-  Just like `ShortText`, `ShortByteString` and `ByteArray`, a `Symbol` has an optimized memory representation,
-  directly wrapping a primitive `ByteArray#`.
-
-  Furthermore, a global symbol table keeps track of which values currently exist, ensuring we always deduplicate symbols.
-  This therefore allows us to:
-
-  - Check for equality between symbols in constant-time (using pointer equality)
-  - Calculate the hash in constant-time (using `StableName`)
-  - Keep the memory footprint of repeatedly-seen strings low.
-
-  This is very useful if you're frequently comparing strings
-  and the same strings might come up many times.
-  It also makes Symbol a great candidate for a key in e.g. a `HashMap` or `HashSet`.
-
-  The global symbol table is implemented using weak pointers,
-  which means that unused symbols will be garbage collected.
-  As such, you do not need to be concerned about memory leaks
-  (as is the case with many other symbol table implementations).
-
-  Please see the full README below or on GitHub at <https://github.com/Qqwy/haskell-symbolize#readme>
-
-
-dependencies:
-# Core functionality:
-- base                 >= 4.7    && < 5
-- deepseq              >= 1.4.0  && < 1.6
-- hashable             >= 1.4.0  && < 1.6
-- random               >= 1.2    && < 2
-- vector-hashtables    >= 0.1    && < 0.2
-- vector               >= 0.12.0 && < 0.14
-# Conversions to/from commonly-used string formats:
-- text-short           >= 0.1.0  && < 0.2
-- bytestring           >= 0.11.0 && < 0.13
-- text                 >= 2.0    && < 2.2
-# Serialisation:
-- binary               >= 0.8.9  && < 0.9
+  GitHub: <https://github.com/qqwy/haskell-symbolize>
 
 ghc-options:
 - -Wall
@@ -72,73 +36,8 @@ ghc-options:
 - -Wredundant-constraints
 
 library:
+  dependencies: 
+  - base < 0
+  - youProbablyWantSymbolizeWithAZ < 0
   source-dirs: src
-  other-modules:
-  - Symbolize.Accursed
-  - Symbolize.SipHash
-  - Symbolize.WeakSymbol
-  - Symbolize.NonEmptyWeakSymbol
-  - Symbolize.SymbolTable
-
-tested-with:
-  GHC ==9.4.8 || ==9.6.6 || ==9.8.4 || ==9.10.1
-
-# executables:
-#   symbolize-exe:
-#     main:                Main.hs
-#     source-dirs:         app
-#     ghc-options:
-#     - -threaded
-#     - -rtsopts
-#     - -with-rtsopts=-N
-#     dependencies:
-#     - symbolize
-
-tests:
-  symbolize-test:
-    source-dirs:         test/suite
-    main:                Suite.hs
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - symbolize
-    - hedgehog
-    - tasty
-    - tasty-hedgehog
-    - tasty-hunit
-    - tasty-golden
-    - async
-    build-tools:
-      tasty-discover:tasty-discover
-  symbolize-doctest:
-    main:                DocTest.hs
-    source-dirs:         test/doctest
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - symbolize
-    - doctest-parallel
-
-benchmarks: 
-  symbolize-bench:
-    source-dirs: benchmarks
-    main: SymbolizeBench.hs
-    build-depends:
-      - symbolize
-      - tasty-bench
-    mixins:
-      tasty-bench (Test.Tasty.Bench as Criterion, Test.Tasty.Bench as Criterion.Main, Test.Tasty.Bench as Gauge, Test.Tasty.Bench as Gauge.Main)
-    ghc-options:
-    - -with-rtsopts=-A32m
-    - -fproc-alignment=64
-
-default-extensions:
-- BangPatterns
-- OverloadedStrings
-- DeriveAnyClass
-- TypeApplications
-- NamedFieldPuns
+  language: Haskell2010
