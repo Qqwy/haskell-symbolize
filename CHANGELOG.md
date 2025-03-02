@@ -8,6 +8,14 @@ and this project adheres to the
 
 ## Unreleased
 
+## 1.0.3.0
+
+- Swap internals of the global symbol table.
+  - Before: `IORef (Data.IntSet (NonEmpty WeakSymbol))`
+  - After: `MVar (HashTable.Dictionary (HashTable.PrimState IO) U.MVector Int V.MVector NonEmptyWeakSymbol)`
+    - Reading/writing to this mutable hashtable from the `vector-hashtables` package scales almost linearly
+    - The `NonEmpty WeakSymbol` is replaced by a monomorphised version of the same, reducing memory overhead by one more word per symbol.
+
 ## 1.0.2.4
 
 - Fix too eager creation of weak pointers, resulting in many needless allocations. This greatly reduces memory pressure and improves speed when inserting many symbols in a short amount of time! 

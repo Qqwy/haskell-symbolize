@@ -58,6 +58,8 @@ library
   other-modules:
       Symbolize.Accursed
       Symbolize.SipHash
+      Symbolize.WeakSymbol
+      Symbolize.NonEmptyWeakSymbol
       Symbolize.SymbolTable
   hs-source-dirs:
       src
@@ -72,12 +74,13 @@ library
       base >=4.7 && <5
     , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
-    , containers >=0.6.0 && <0.8
     , deepseq >=1.4.0 && <1.6
     , hashable >=1.4.0 && <1.6
     , random >=1.2 && <2
     , text >=2.0 && <2.2
     , text-short >=0.1.0 && <0.2
+    , vector
+    , vector-hashtables ==0.1.*
   default-language: Haskell2010
 
 test-suite symbolize-doctest
@@ -100,7 +103,6 @@ test-suite symbolize-doctest
       base >=4.7 && <5
     , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
-    , containers >=0.6.0 && <0.8
     , deepseq >=1.4.0 && <1.6
     , doctest-parallel
     , hashable >=1.4.0 && <1.6
@@ -108,6 +110,8 @@ test-suite symbolize-doctest
     , symbolize
     , text >=2.0 && <2.2
     , text-short >=0.1.0 && <0.2
+    , vector
+    , vector-hashtables ==0.1.*
   default-language: Haskell2010
 
 test-suite symbolize-test
@@ -134,7 +138,6 @@ test-suite symbolize-test
     , base >=4.7 && <5
     , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
-    , containers >=0.6.0 && <0.8
     , deepseq >=1.4.0 && <1.6
     , hashable >=1.4.0 && <1.6
     , hedgehog
@@ -146,6 +149,8 @@ test-suite symbolize-test
     , tasty-hunit
     , text >=2.0 && <2.2
     , text-short >=0.1.0 && <0.2
+    , vector
+    , vector-hashtables ==0.1.*
   default-language: Haskell2010
 
 benchmark symbolize-bench
@@ -168,7 +173,6 @@ benchmark symbolize-bench
       base >=4.7 && <5
     , binary >=0.8.9 && <0.9
     , bytestring >=0.11.0 && <0.13
-    , containers >=0.6.0 && <0.8
     , deepseq >=1.4.0 && <1.6
     , hashable >=1.4.0 && <1.6
     , random >=1.2 && <2
@@ -177,4 +181,5 @@ benchmark symbolize-bench
     , text >=2.0 && <2.2
     , text-short >=0.1.0 && <0.2
     , vector
+    , vector-hashtables ==0.1.*
   default-language: Haskell2010

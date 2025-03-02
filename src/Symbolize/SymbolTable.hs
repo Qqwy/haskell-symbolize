@@ -2,6 +2,7 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# OPTIONS_HADDOCK hide, prune #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Symbolize.SymbolTable
   ( insertGlobal,
@@ -16,38 +17,26 @@ where
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Array.Byte (ByteArray (ByteArray))
 import Data.Foldable qualified as Foldable
-import Data.IORef (IORef)
-import Data.IORef qualified as IORef
-import Data.IntMap.Strict (IntMap)
-import Data.IntMap.Strict qualified as IntMap
+import qualified Data.Vector.Mutable as VM
+import qualified Data.Vector.Unboxed.Mutable  as UM
+import Data.Vector.Hashtables qualified as HashTable
 import Data.List qualified
-import Data.List.NonEmpty (NonEmpty(..))
-import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (mapMaybe)
-import GHC.Exts (ByteArray#, StableName#, Weak#, deRefWeak#, makeStableName#, mkWeak#)
-import GHC.IO (IO (IO), unsafePerformIO)
-import Symbolize.Accursed qualified
+import GHC.Exts (ByteArray#)
+import GHC.IO (unsafePerformIO)
 import Symbolize.Accursed qualified as Accursed
 import Symbolize.SipHash qualified as SipHash
 import System.IO.Unsafe qualified
 import System.Random.Stateful qualified as Random (Uniform (uniformM), globalStdGen)
 import Prelude hiding (lookup)
+import Control.Concurrent (MVar)
+import Control.Concurrent.MVar qualified as MVar
+import Symbolize.WeakSymbol (WeakSymbol)
+import Symbolize.WeakSymbol qualified as WeakSymbol
+import Symbolize.NonEmptyWeakSymbol (NonEmptyWeakSymbol)
+import Symbolize.NonEmptyWeakSymbol qualified as NonEmptyWeakSymbol
 
--- Inside the WeakSymbol
--- we keep:
--- - A weak pointer to the underlying ByteArray#.
---   This weak pointer will be invalidated (turn into a 'tombstone')
---   when the final instance of this symbol is GC'd
--- - A `StableName` for the same ByteArray#
---   This ensures we have a stable hash even in the presence of the ByteArray#
---   being moved around by the GC.
---   We never read it after construction,
---   but by keeping it around until the WeakSymbol is removed by the finalizer,
---   we ensure that future calls to `makeStableName` return the same hash.
-data WeakSymbol where
-  WeakSymbol# :: Weak# ByteArray# -> StableName# ByteArray# -> WeakSymbol
-
-newtype SymbolTable = SymbolTable (IntMap (NonEmpty WeakSymbol))
+newtype SymbolTable = SymbolTable (HashTable.Dictionary (HashTable.PrimState IO) UM.MVector Int VM.MVector NonEmptyWeakSymbol)
 
 -- | The global Symbol Table, containing a mapping between each symbol's textual representation and its deduplicated pointer.
 --
@@ -58,12 +47,11 @@ newtype SymbolTable = SymbolTable (IntMap (NonEmpty WeakSymbol))
 --
 -- Current implementation details (these might change even between PVP-compatible versions):
 --
--- - An `IntMap` is used for mapping $(SipHash text) -> weak symbol$.
---   Such an IntMap has O(min(n, 64)) lookup time.
+-- - A `CuckooHashTable Int` is used for mapping $(SipHash text) -> weak symbol$.
 -- - Since SipHash is used as hashing algorithm and the key that is used
 --   is randomized on global table initialization,
 --   the table is resistent to HashDoS attacks.
-data GlobalSymbolTable = GlobalSymbolTable (IORef SymbolTable) SipHash.SipKey
+data GlobalSymbolTable = GlobalSymbolTable (MVar SymbolTable) SipHash.SipKey
 
 newtype Hash = Hash {hashToInt :: Int}
 
@@ -71,64 +59,62 @@ newtype Hash = Hash {hashToInt :: Int}
 instance Show GlobalSymbolTable where
   -- SAFETY: We're only reading, and do not care about performance here.
   show (GlobalSymbolTable table _) = System.IO.Unsafe.unsafePerformIO $ do
-    SymbolTable symtab <- IORef.readIORef table
-    let contents = Data.List.sort $ map Accursed.shortTextFromBA $ foldMap aliveWeaks $ IntMap.elems symtab
-    pure $ "GlobalSymbolTable { size = " <> show (length contents) <> ", symbols = " <> show contents <> " }"
+    MVar.withMVar table $ \(SymbolTable symtab) -> do
+      elems <- fmap snd <$> HashTable.toList symtab
+      let contents = Data.List.sort $ map Accursed.shortTextFromBA $ foldMap aliveWeaks elems
+      pure $ "GlobalSymbolTable { size = " <> show (length contents) <> ", symbols = " <> show contents <> " }"
 
 insertGlobal :: ByteArray# -> IO ByteArray
 {-# INLINE insertGlobal #-}
 insertGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
   let !hash = calculateHash sipkey ba#
-  -- SAFETY: If the table IORef contested, 
-  -- this might trigger `weak` creation for the same bytestring from multiple threads
-  -- at the same time.
-  -- But finalization is idempotent, and only when a thread finally wins the Compare-and-Swap
-  -- will its `weak` pointer be inserted (or alternatively another previously-inserted `ba` returned).
-  -- So once this function returns, we can be sure we've returned a deduplicated ByteArray
-  IORef.atomicModifyIORef' gsymtab $ \table ->
-    case lookup ba# hash table of
-      Just ba -> (table, ba)
-      Nothing ->
-        let !weak = Accursed.accursedUnutterablePerformIO (mkWeakSymbol ba# (removeGlobal hash))
-        in (insert hash weak table, ByteArray ba#)
+  MVar.withMVar gsymtab $ \table -> do
+    res <- lookup ba# sipkey table
+    case res of
+      Just ba -> pure ba
+      Nothing -> do
+        !weak <- WeakSymbol.new ba# (removeGlobal hash)
+        insert hash weak table
+        pure (ByteArray ba#)
 
 lookupGlobal :: ByteArray# -> IO (Maybe ByteArray)
 {-# INLINE lookupGlobal #-}
 lookupGlobal ba# = do
   GlobalSymbolTable gsymtab sipkey <- globalSymbolTable
-  table <- IORef.readIORef gsymtab
-  let hash = calculateHash sipkey ba#
-  pure (lookup ba# hash table)
+  MVar.withMVar gsymtab (lookup ba# sipkey)
 
 removeGlobal :: Hash -> IO ()
 {-# INLINE removeGlobal #-}
 removeGlobal !key = do
   GlobalSymbolTable gsymtab _ <- globalSymbolTable
-  IORef.atomicModifyIORef' gsymtab $ \table ->
-    (remove key table, ())
+  MVar.withMVar gsymtab (remove key)
 
-insert :: Hash -> WeakSymbol -> SymbolTable -> SymbolTable
+insert :: Hash -> WeakSymbol -> SymbolTable -> IO ()
 {-# INLINE insert #-}
-insert key weak (SymbolTable table) =
-  let table' = IntMap.alter (Just . maybe (pure weak) (NonEmpty.cons weak)) (hashToInt key) table
-   in SymbolTable table'
-
-lookup :: ByteArray# -> Hash -> SymbolTable -> Maybe ByteArray
-{-# INLINE lookup #-}
-lookup ba# hash (SymbolTable table) = do
-  weaks <- IntMap.lookup (hashToInt hash) table
-  Foldable.find (\other -> other == ByteArray ba#) (aliveWeaks weaks)
-
-remove :: Hash -> SymbolTable -> SymbolTable
-{-# INLINE remove #-}
-remove (Hash key) (SymbolTable table) =
-  let table' = IntMap.update removeTombstones key table
-   in SymbolTable table'
+insert key weak (SymbolTable table) = HashTable.alter table insertOrConcat (hashToInt key)
   where
-    removeTombstones = NonEmpty.nonEmpty . NonEmpty.filter isNoTombstone
+    insertOrConcat = \case
+      Nothing -> Just (NonEmptyWeakSymbol.singleton weak)
+      Just weaks -> Just (NonEmptyWeakSymbol.cons weak weaks)
+
+lookup :: ByteArray# -> SipHash.SipKey -> SymbolTable -> IO (Maybe ByteArray)
+{-# INLINE lookup #-}
+lookup ba# sipkey (SymbolTable table) = do
+  let !key = calculateHash sipkey ba#
+  weaks <- HashTable.lookup table (hashToInt key)
+  pure $ case weaks of
+    Nothing -> Nothing
+    Just weaks' ->
+      Foldable.find (\other -> other == ByteArray ba#) (aliveWeaks weaks')
+
+remove :: Hash -> SymbolTable -> IO ()
+{-# INLINE remove #-}
+remove (Hash key) (SymbolTable table) = HashTable.alter table (>>= removeTombstones) key
+  where
+    removeTombstones = NonEmptyWeakSymbol.nonEmpty . filter isNoTombstone . NonEmptyWeakSymbol.toList
     isNoTombstone weak =
-      case deRefWeakSymbol weak of
+      case WeakSymbol.deref weak of
         Nothing -> False
         Just _ -> True
 
@@ -138,34 +124,9 @@ calculateHash sipkey ba# =
   let (SipHash.SipHash word) = SipHash.hash sipkey (ByteArray ba#)
    in Hash (fromIntegral word)
 
-mkWeakSymbol :: ByteArray# -> IO () -> IO WeakSymbol
-{-# INLINE mkWeakSymbol #-}
-mkWeakSymbol ba# (IO finalizer#) = 
-    -- SAFETY: This should even be safe
-    -- in the presence of inlining, CSE and full laziness
-    --
-    -- because the result is outwardly pure
-    -- and the finalizer we use is idempotent
-  IO $ \s1 -> case mkWeak# ba# ba# finalizer# s1 of
-    (# s2, weak# #) ->
-      case makeStableName# ba# s2 of
-        (# s3, sname# #) ->
-          (# s3, WeakSymbol# weak# sname# #)
-
-deRefWeakSymbol :: WeakSymbol -> Maybe ByteArray
-{-# INLINE deRefWeakSymbol #-}
-deRefWeakSymbol (WeakSymbol# w _sn) = 
-    -- SAFETY: This should even be safe
-    -- in the presence of inlining, CSE and full laziness;
-    Symbolize.Accursed.accursedUnutterablePerformIO $ IO $ \s ->
-  case deRefWeak# w s of
-    (# s1, flag, p #) -> case flag of
-      0# -> (# s1, Nothing #)
-      _ -> (# s1, Just (ByteArray p) #)
-
-aliveWeaks :: NonEmpty WeakSymbol -> [ByteArray]
+aliveWeaks :: NonEmptyWeakSymbol -> [ByteArray]
 {-# INLINE aliveWeaks #-}
-aliveWeaks = mapMaybe deRefWeakSymbol . NonEmpty.toList
+aliveWeaks = mapMaybe WeakSymbol.deref . NonEmptyWeakSymbol.toList
 
 -- | Get a handle to the `GlobalSymbolTable`
 --
@@ -177,14 +138,18 @@ globalSymbolTable' :: GlobalSymbolTable
 -- SAFETY: We need all calls to globalSymbolTable' to use the same thunk, so NOINLINE.
 {-# NOINLINE globalSymbolTable' #-}
 globalSymbolTable' = unsafePerformIO $ do
-  !ref <- IORef.newIORef (SymbolTable mempty)
+  !table <- HashTable.initialize 128
+  !ref <- MVar.newMVar (SymbolTable table)
   !sipkey <- Random.uniformM Random.globalStdGen
   pure (GlobalSymbolTable ref sipkey)
 
 -- | Returns the current size of the global symbol table. Useful for introspection or metrics.
+--
+-- Should not be used in high-performance code, as it might walk over the full table.
 globalSymbolTableSize :: IO Word
 globalSymbolTableSize = do
   GlobalSymbolTable gsymtab _ <- globalSymbolTable
-  SymbolTable table <- IORef.readIORef gsymtab
-  let size = fromIntegral (IntMap.size table)
-  pure size
+  MVar.withMVar gsymtab $ \(SymbolTable table) -> do
+    elems <- HashTable.toList table
+    let size = fromIntegral (length elems)
+    pure size
